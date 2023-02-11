@@ -1,0 +1,52 @@
+version: '3.1'
+
+services:
+
+  source_db:
+    image: postgres:15-bullseye
+    restart: always
+    ports:
+      - '5437:5432'
+    environment:
+      POSTGRES_USER: source_dev_db_user
+      POSTGRES_PASSWORD: source_dev_db
+    networks:
+      - pggosync_net
+    volumes:
+      - source-db-data:/var/lib/postgresql/data
+      - ./_seed-data/ddl.sql:/docker-entrypoint-initdb.d/ddl.sql
+      - ./_seed-data/dml.sql:/docker-entrypoint-initdb.d/dml.sql
+
+  dest_db:
+    image: postgres:15-bullseye
+    restart: always
+    ports:
+      - '5438:5432'
+    environment:
+      POSTGRES_USER: dest_dev_db_user
+      POSTGRES_PASSWORD: dest_dev_db
+    networks:
+      - pggosync_net
+    volumes:
+      - dest-db-data:/var/lib/postgresql/data
+
+  pgadmin4:
+    image: dpage/pgadmin4:6.20
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    networks:
+      - pggosync_net
+    depends_on:
+      - source_db
+      - dest_db
+    ports:
+      - "5050:80"
+
+volumes:
+  source-db-data:
+  dest-db-data:
+
+networks:
+  pggosync_net:
