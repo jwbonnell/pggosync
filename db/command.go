@@ -6,7 +6,7 @@ import (
 )
 
 func getConn() (*sql.DB, error) {
-	connStr := "user=pqgotest dbname=pqgotest sslmode=verify-full"
+	connStr := "user=source_dev_db_user dbname=pqgotest sslmode=verify-full"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
