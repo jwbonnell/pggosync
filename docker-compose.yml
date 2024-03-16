@@ -8,6 +8,7 @@ services:
     ports:
       - '5437:5432'
     environment:
+      POSTGRESS_DB: postgres
       POSTGRES_USER: source_dev_db_user
       POSTGRES_PASSWORD: source_dev_db
     networks:
@@ -23,6 +24,7 @@ services:
     ports:
       - '5438:5432'
     environment:
+      POSTGRESS_DB: postgres
       POSTGRES_USER: dest_dev_db_user
       POSTGRES_PASSWORD: dest_dev_db
     networks:
