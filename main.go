@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/sync"
 )
@@ -26,7 +27,7 @@ func main() {
 		Database: "postgres",
 	}
 
-	source, err := sync.NewDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
+	source, err := datasource.NewReadDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)
@@ -48,7 +49,7 @@ func main() {
 		Database: "postgres",
 	}
 
-	destination, err := sync.NewDataSource("destination", db.BuildUrl(d.Host, d.Port, d.UserName, d.Password, d.Database))
+	destination, err := datasource.NewReadWriteDataSource("destination", db.BuildUrl(d.Host, d.Port, d.UserName, d.Password, d.Database))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)

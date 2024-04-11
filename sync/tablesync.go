@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
+	"github.com/jwbonnell/pggosync/datasource"
 )
 
 type TableSync struct {
-	source      *DataSource
-	destination *DataSource
+	source      *datasource.ReaderDataSource
+	destination *datasource.ReadWriteDatasource
 }
 
-func NewTableSync(source *DataSource, dest *DataSource) *TableSync {
+func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) *TableSync {
 	return &TableSync{
 		source:      source,
 		destination: dest,

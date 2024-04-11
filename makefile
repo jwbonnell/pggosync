@@ -15,15 +15,15 @@
 # 		[ ] 
 # [ ] Create Reader Datasource Interface
 #     [ ] Query
-#     [ ] Version
-#     [ ] Get Schemas
-#     [ ] Get Tables
+#     [X] Version
+#     [X] Get Schemas
+#     [X] Get Tables
 # [ ] Create ReadWriter Datasource Interface 
-# 		[ ] truncate	
-#     [ ] update sequences
-#     [ ] create temp table
-#     [ ] delete 
-#     [ ] insert w/ on conflict support
+# 		[X] truncate	
+#     [X] update sequences
+#     [X] create temp table
+#     [X] delete 
+#     [X] insert w/ on conflict support
 # [ ] Schema Sync
 #		[ ] Figure out how to use pg_dump and pg_restore to accomplish this, or use Copy?
 #	

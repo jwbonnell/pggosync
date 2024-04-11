@@ -1,4 +1,4 @@
-package sync
+package datasource
 
 import (
 	"context"
@@ -10,21 +10,21 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-type DataSource struct {
+type ReaderDataSource struct {
 	Url   string
 	DB    *pgx.Conn
 	Name  string
 	Debug bool
 }
 
-func NewDataSource(Name string, Url string) (*DataSource, error) {
-	var datasource DataSource
+func NewReadDataSource(Name string, Url string) (*ReaderDataSource, error) {
+	var datasource ReaderDataSource
 	db, err := pgx.Connect(context.Background(), Url)
 	if err != nil {
-		return &DataSource{}, fmt.Errorf("unable to connect to database: %w", err)
+		return &ReaderDataSource{}, fmt.Errorf("unable to connect to database: %w", err)
 	}
 
-	datasource = DataSource{
+	datasource = ReaderDataSource{
 		Url:   Url,
 		DB:    db,
 		Name:  Name,
@@ -33,7 +33,7 @@ func NewDataSource(Name string, Url string) (*DataSource, error) {
 
 	err = datasource.StatusCheck(context.Background())
 	if err != nil {
-		return &DataSource{}, fmt.Errorf("db StatusCheck failed: %w", err)
+		return &ReaderDataSource{}, fmt.Errorf("db StatusCheck failed: %w", err)
 	}
 
 	fmt.Printf("%s DB connection successful\n", datasource.Name)
@@ -41,9 +41,9 @@ func NewDataSource(Name string, Url string) (*DataSource, error) {
 	return &datasource, nil
 }
 
-func (d *DataSource) GetTables(ctx context.Context) ([]db.Table, error) {
+func (r *ReaderDataSource) GetTables(ctx context.Context) ([]db.Table, error) {
 	var tables []db.Table
-	err := pgxscan.Select(ctx, d.DB, &tables, `
+	err := pgxscan.Select(ctx, r.DB, &tables, `
 		SELECT
 				table_schema AS schema,
 				table_name AS name
@@ -53,25 +53,25 @@ func (d *DataSource) GetTables(ctx context.Context) ([]db.Table, error) {
 			ORDER BY 1, 2
 	`)
 	if err != nil {
-		return tables, fmt.Errorf("%s GetTables %w", d.Name, err)
+		return tables, fmt.Errorf("%s GetTables %w", r.Name, err)
 	}
 
 	return tables, nil
 }
 
-func (d *DataSource) GetSchemas(ctx context.Context) ([]string, error) {
+func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
 	var schemas []string
-	err := pgxscan.Select(ctx, d.DB, &schemas, `SELECT schema_name FROM information_schema.schemata	ORDER BY 1`)
+	err := pgxscan.Select(ctx, r.DB, &schemas, `SELECT schema_name FROM information_schema.schemata	ORDER BY 1`)
 	if err != nil {
-		return schemas, fmt.Errorf("%s GetSchemas %w", d.Name, err)
+		return schemas, fmt.Errorf("%s GetSchemas %w", r.Name, err)
 	}
 
 	return schemas, nil
 }
 
-func (d *DataSource) GetTriggers(ctx context.Context) ([]db.Trigger, error) {
+func (r *ReaderDataSource) GetTriggers(ctx context.Context) ([]db.Trigger, error) {
 	var triggers []db.Trigger
-	err := pgxscan.Select(ctx, d.DB, &triggers, `
+	err := pgxscan.Select(ctx, r.DB, &triggers, `
 		SELECT
 				tgname AS name,
 				tgisinternal AS internal,
@@ -83,15 +83,15 @@ func (d *DataSource) GetTriggers(ctx context.Context) ([]db.Trigger, error) {
 				pg_trigger.tgrelid = $1::regclass
 	`)
 	if err != nil {
-		return triggers, fmt.Errorf("%s GetTriggers %w", d.Name, err)
+		return triggers, fmt.Errorf("%s GetTriggers %w", r.Name, err)
 	}
 
 	return triggers, nil
 }
 
-func (d *DataSource) StatusCheck(ctx context.Context) error {
+func (r *ReaderDataSource) StatusCheck(ctx context.Context) error {
 
-	// If the user doesn't give us a deadline set 1 second.
+	// If the user doesn't give us a deadline set 1 seconr.
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Second)
@@ -100,7 +100,7 @@ func (d *DataSource) StatusCheck(ctx context.Context) error {
 
 	var pingError error
 	for attempts := 1; ; attempts++ {
-		pingError = d.DB.Ping(ctx)
+		pingError = r.DB.Ping(ctx)
 		if pingError == nil {
 			break
 		}
@@ -117,12 +117,12 @@ func (d *DataSource) StatusCheck(ctx context.Context) error {
 	// Run a simple query to determine connectivity.
 	// Running this query forces a round trip through the database.
 	var tmp bool
-	return d.DB.QueryRow(context.Background(), "SELECT true").Scan(&tmp)
+	return r.DB.QueryRow(context.Background(), "SELECT true").Scan(&tmp)
 }
 
-func (d *DataSource) Version(ctx context.Context) (string, error) {
+func (r *ReaderDataSource) Version(ctx context.Context) (string, error) {
 	var version string
-	err := d.DB.QueryRow(context.Background(), "SELECT VERSION()").Scan(&version)
+	err := r.DB.QueryRow(context.Background(), "SELECT VERSION()").Scan(&version)
 	if err != nil {
 		return "", err
 	}
@@ -130,9 +130,9 @@ func (d *DataSource) Version(ctx context.Context) (string, error) {
 	return version, nil
 }
 
-func (d *DataSource) GetNonDeferrableConstraints() ([]db.NonDeferrableConstraints, error) {
+func (r *ReaderDataSource) GetNonDeferrableConstraints() ([]db.NonDeferrableConstraints, error) {
 	var constraints []db.NonDeferrableConstraints
-	err := d.DB.QueryRow(context.Background(), `
+	err := r.DB.QueryRow(context.Background(), `
 		SELECT
 				table_schema AS schema,
 				table_name AS table,
@@ -148,13 +148,4 @@ func (d *DataSource) GetNonDeferrableConstraints() ([]db.NonDeferrableConstraint
 	}
 
 	return constraints, nil
-}
-
-func (d *DataSource) Truncate(ctx context.Context, table string) error {
-	_, err := d.DB.Exec(ctx, "TRUNCATE $1 CASCADE", table)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
