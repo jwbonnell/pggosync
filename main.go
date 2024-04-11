@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 
-	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
+	"github.com/jwbonnell/pggosync/sync"
 )
 
 func main() {
@@ -22,12 +21,12 @@ func main() {
 	}{
 		Host:     "localhost",
 		Port:     5437,
-		UserName: "source_dev_db_user",
-		Password: "source_dev_db",
-		Database: "source_dev_db_user",
+		UserName: "source_user",
+		Password: "source_pw",
+		Database: "postgres",
 	}
 
-	source, err := datasource.NewDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
+	source, err := sync.NewDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)
@@ -44,12 +43,12 @@ func main() {
 	}{
 		Host:     "localhost",
 		Port:     5438,
-		UserName: "dest_dev_db_user",
-		Password: "dest_dev_db",
-		Database: "dest_dev_db_user",
+		UserName: "dest_user",
+		Password: "dest_pw",
+		Database: "postgres",
 	}
 
-	destination, err := datasource.NewDataSource("destination", db.BuildUrl(d.Host, d.Port, d.UserName, d.Password, d.Database))
+	destination, err := sync.NewDataSource("destination", db.BuildUrl(d.Host, d.Port, d.UserName, d.Password, d.Database))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)
@@ -81,21 +80,16 @@ func main() {
 
 	fmt.Println(tables)
 
-	var buf bytes.Buffer
-	conn := source.DB.PgConn()
-	conn.CopyTo(ctx, &buf, "COPY (SELECT * FROM city WHERE country_id > 20 ) TO STDOUT")
+	sync := sync.NewTableSync(source, destination)
+	err = sync.Sync(ctx, "country", "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "CopyTo failed %v\n", err)
+		fmt.Fprintf(os.Stderr, "Sync failed %v\n", err)
 		os.Exit(1)
 	}
 
-	dconn := destination.DB.PgConn()
-	_, err = dconn.CopyFrom(ctx, &buf, "COPY city (city_id, city_name, country_id) FROM STDIN")
+	err = sync.Sync(ctx, "city", "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "CopyFrom failed %v\n", err)
+		fmt.Fprintf(os.Stderr, "Sync failed %v\n", err)
 		os.Exit(1)
 	}
-	//res, _ := source.DB.Query(ctx, "COPY (SELECT * FROM city WHERE country_id > 20 ) TO STDOUT")
-	//res, _ := source.DB.Query(ctx, "COPY (SELECT * FROM city WHERE country_id > 20 ) TO  '/tmp/foo.csv' CSV")
-	fmt.Println(buf.String())
 }

@@ -1,4 +1,4 @@
-package datasource
+package sync
 
 import (
 	"context"
@@ -148,4 +148,13 @@ func (d *DataSource) GetNonDeferrableConstraints() ([]db.NonDeferrableConstraint
 	}
 
 	return constraints, nil
+}
+
+func (d *DataSource) Truncate(ctx context.Context, table string) error {
+	_, err := d.DB.Exec(ctx, "TRUNCATE $1 CASCADE", table)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

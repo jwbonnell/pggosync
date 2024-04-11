@@ -1,12 +1,54 @@
-func handleNonDeferrableConstraints() error {
-	constraints, err := db.GetNonDeferrableConstraints()
+package sync
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+)
+
+type TableSync struct {
+	source      *DataSource
+	destination *DataSource
+}
+
+func NewTableSync(source *DataSource, dest *DataSource) *TableSync {
+	return &TableSync{
+		source:      source,
+		destination: dest,
+	}
+}
+
+func (t *TableSync) Sync(ctx context.Context, table string, filter string) error {
+	return t.copy(ctx, table, filter)
+}
+
+func (t *TableSync) copy(ctx context.Context, table string, filter string) error {
+	//TODO add support for only copying certain columns
+	var buf bytes.Buffer
+	sconn := t.source.DB.PgConn()
+	_, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT * FROM %s %s ) TO STDOUT", table, filter))
 	if err != nil {
 		return err
 	}
 
-	for _, con := range constraints {
-		//destination.execute("ALTER TABLE #{quote_ident_full(table)} ALTER CONSTRAINT #{quote_ident(constraint)} DEFERRABLE")
+	dconn := t.destination.DB.PgConn()
+	_, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s FROM STDIN", table))
+	if err != nil {
+		return err
 	}
+
+	return nil
+}
+
+func (t *TableSync) handleNonDeferrableConstraints() error {
+	//constraints, err := t.source.GetNonDeferrableConstraints()
+	/* if err != nil {
+		return err
+	} */
+
+	//for _, con := range constraints {
+	//destination.execute("ALTER TABLE #{quote_ident_full(table)} ALTER CONSTRAINT #{quote_ident(constraint)} DEFERRABLE")
+	//}
 
 	//destination.execute("SET CONSTRAINTS ALL DEFERRED")
 
@@ -29,5 +71,5 @@ func handleNonDeferrableConstraints() error {
 		 destination.execute("ALTER TABLE #{quote_ident_full(table)} ALTER CONSTRAINT #{quote_ident(constraint)} NOT DEFERRABLE")
 	  end
 	end */
-
+	return nil
 }
