@@ -1,4 +1,36 @@
 # ==============================================================================
+# Tasks
+# [ ] CLI Layer
+# 		[ ] Safety checks
+# 			[ ] localhost destination is required without explicit opt in
+#			[ ] Confirmation prompts
+# 		[ ] CLI frameworks
+#        [ ] charmed/bubbletea for
+# 			[ ] ardanlabs/conf/v3 for cli flag, env var and args handling if bubbletea does not handle it
+# 		[ ] 
+# [ ] Table Sync
+# 		[ ] truncate support
+# 		[ ] defer constraints support
+# 		[ ] preserve existing data support
+# 		[ ] 
+# [ ] Create Reader Datasource Interface
+#     [ ] Query
+#     [ ] Version
+#     [ ] Get Schemas
+#     [ ] Get Tables
+# [ ] Create ReadWriter Datasource Interface 
+# 		[ ] truncate	
+#     [ ] update sequences
+#     [ ] create temp table
+#     [ ] delete 
+#     [ ] insert w/ on conflict support
+# [ ] Schema Sync
+#		[ ] Figure out how to use pg_dump and pg_restore to accomplish this, or use Copy?
+#	
+# Future
+# 		* Batch support for large tables
+
+# ==============================================================================
 # Variables
 
 PSQL_SOURCE_CMD := docker compose exec source_db psql -h localhost -U source_user -d postgres
