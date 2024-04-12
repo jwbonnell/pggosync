@@ -69,7 +69,7 @@ func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
 	return schemas, nil
 }
 
-func (r *ReaderDataSource) GetTriggers(ctx context.Context) ([]db.Trigger, error) {
+func (r *ReaderDataSource) GetTriggers(ctx context.Context, table string) ([]db.Trigger, error) {
 	var triggers []db.Trigger
 	err := pgxscan.Select(ctx, r.DB, &triggers, `
 		SELECT
@@ -81,7 +81,8 @@ func (r *ReaderDataSource) GetTriggers(ctx context.Context) ([]db.Trigger, error
 				pg_trigger
 			WHERE
 				pg_trigger.tgrelid = $1::regclass
-	`)
+	`, table)
+	fmt.Println(triggers)
 	if err != nil {
 		return triggers, fmt.Errorf("%s GetTriggers %w", r.Name, err)
 	}
@@ -120,19 +121,9 @@ func (r *ReaderDataSource) StatusCheck(ctx context.Context) error {
 	return r.DB.QueryRow(context.Background(), "SELECT true").Scan(&tmp)
 }
 
-func (r *ReaderDataSource) Version(ctx context.Context) (string, error) {
-	var version string
-	err := r.DB.QueryRow(context.Background(), "SELECT VERSION()").Scan(&version)
-	if err != nil {
-		return "", err
-	}
-
-	return version, nil
-}
-
-func (r *ReaderDataSource) GetNonDeferrableConstraints() ([]db.NonDeferrableConstraints, error) {
+func (r *ReaderDataSource) GetNonDeferrableConstraints(ctx context.Context) ([]db.NonDeferrableConstraints, error) {
 	var constraints []db.NonDeferrableConstraints
-	err := r.DB.QueryRow(context.Background(), `
+	err := pgxscan.Select(ctx, r.DB, &constraints, `
 		SELECT
 				table_schema AS schema,
 				table_name AS table,
@@ -142,7 +133,7 @@ func (r *ReaderDataSource) GetNonDeferrableConstraints() ([]db.NonDeferrableCons
 			WHERE
 				constraint_type = 'FOREIGN KEY' AND
 				is_deferrable = 'NO'
-	`).Scan(&constraints)
+	`)
 	if err != nil {
 		return constraints, err
 	}

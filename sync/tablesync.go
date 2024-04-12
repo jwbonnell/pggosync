@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jwbonnell/pggosync/datasource"
+	"github.com/jwbonnell/pggosync/db"
 )
 
 type TableSync struct {
@@ -20,7 +21,31 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 	}
 }
 
-func (t *TableSync) Sync(ctx context.Context, table string, filter string) error {
+func (t *TableSync) Sync(ctx context.Context, table string, filter string, truncate bool, preserve bool) error {
+	if !truncate {
+		//TODO PK CHECK
+		ttName := db.GenTempTableName(0)
+		err := t.destination.CreateTempTable(ctx, ttName, table)
+		if err != nil {
+			return fmt.Errorf("datasource.CreateTempTable: %w", err)
+		}
+
+		err = t.copyTo(ctx, table, ttName, "")
+		if err != nil {
+			return fmt.Errorf("TableSync.copyTo temp table %s: %w", ttName, err)
+		}
+
+		onConflict := "NOTHING"
+		if !preserve {
+			onConflict = 
+		}
+
+		err = t.destination.InsertFromTempTable(ctx, ttName, table, []string{}, onConflict, action)
+
+	} else {
+
+	}
+
 	return t.copy(ctx, table, filter)
 }
 
@@ -35,6 +60,24 @@ func (t *TableSync) copy(ctx context.Context, table string, filter string) error
 
 	dconn := t.destination.DB.PgConn()
 	_, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s FROM STDIN", table))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *TableSync) copyTo(ctx context.Context, sourceTable string, destTable string, filter string) error {
+	//TODO aconsider merging copy anc copyTo, keeping separate for now
+	var buf bytes.Buffer
+	sconn := t.source.DB.PgConn()
+	_, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT * FROM %s %s ) TO STDOUT", sourceTable, filter))
+	if err != nil {
+		return err
+	}
+
+	dconn := t.destination.DB.PgConn()
+	_, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s FROM STDIN", destTable))
 	if err != nil {
 		return err
 	}

@@ -82,3 +82,19 @@ CREATE TABLE IF NOT EXISTS order_status (
       FOREIGN KEY(status_name_id) 
 	  REFERENCES status_name(status_name_id)  
 );
+
+-- Dummy tables for testing
+CREATE TABLE dummy (
+  id SERIAL PRIMARY KEY,
+  name TEXT
+);
+
+CREATE OR REPLACE FUNCTION do_something()
+RETURNS trigger AS
+$$
+BEGIN
+  RAISE EXCEPTION 'DO SOMETHING!';
+END;
+$$
+LANGUAGE plpgsql;
+CREATE TRIGGER do_something_trigger BEFORE INSERT OR UPDATE ON dummy FOR EACH ROW EXECUTE PROCEDURE do_something();

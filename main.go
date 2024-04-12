@@ -57,14 +57,6 @@ func main() {
 
 	defer destination.DB.Close(ctx)
 
-	version, err := source.Version(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Version failed %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println(version)
-
 	schemas, err := source.GetSchemas(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GetSchemas failed %v\n", err)

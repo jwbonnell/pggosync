@@ -1,8 +1,8 @@
 package db
 
 type Trigger struct {
-	TgName       string `db:"tgname"`
-	TgIsInternal string `db:"tgisinternal"`
-	TgEnabled    bool   `db:"tgenabled"`
-	TgConstraint bool   `db:"tgconstraint"`
+	Name      string `db:"name"`
+	Internal  bool   `db:"internal"`
+	Enabled   bool   `db:"enabled"`
+	Integrity bool   `db:"integrity"`
 }
