@@ -19,7 +19,7 @@ func TestGetTables(t *testing.T) {
 
 	tables, err := rd.GetTables(ctx)
 	assert.Nil(t, err)
-	assert.Len(t, tables, 8)
+	assert.Len(t, tables, 12)
 
 	defer rd.DB.Close(ctx)
 }

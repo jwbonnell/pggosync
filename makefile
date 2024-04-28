@@ -7,18 +7,27 @@
 # 		[ ] CLI frameworks
 #        [ ] charmed/bubbletea for
 # 			[ ] ardanlabs/conf/v3 for cli flag, env var and args handling if bubbletea does not handle it
-# 		[ ] 
+# 		[ ] Support passing in dynamic values/params, like {erno}
+# [ ] Main
+# 		[ ] Main run function
+# 		[ ] Param validation
+#		[X] concurrency setup
+#		[X] Task struct
+#		[X] Defer constraints
+#		[ ] set up a task per table 
+#		[ ] Support table and schema exclusion
+#		[ ] Support omitting sensitive data columns
+#		
 # [ ] Table Sync
-# 		[ ] truncate support
-# 		[ ] defer constraints support
+# 		[X] truncate support
+# 		[X] defer constraints support
 # 		[ ] preserve existing data support
 # 		[ ] 
-# [ ] Create Reader Datasource Interface
-#     [ ] Query
+# [X] Create Reader Datasource Interface
 #     [X] Version
 #     [X] Get Schemas
 #     [X] Get Tables
-# [ ] Create ReadWriter Datasource Interface 
+# [X] Create ReadWriter Datasource Interface 
 # 		[X] truncate	
 #     [X] update sequences
 #     [X] create temp table
@@ -40,6 +49,9 @@ PSQL_DEST_CMD   := docker compose exec dest_db psql -h localhost -U dest_user -d
 # ==============================================================================
 # Dev Commands
 
+test:
+	go test -count=1 ./...
+
 reset-docker-databases:
 	docker compose down
 	docker volume rm pggosync_source-db-data
@@ -50,6 +62,7 @@ reset-docker-databases:
 # ==============================================================================
 # Database commands
 
+# Source
 psql-source:
 	$(PSQL_SOURCE_CMD)
 
@@ -59,6 +72,10 @@ psql-source-version:
 psql-source-city:
 	$(PSQL_SOURCE_CMD) -c 'SELECT * FROM public.city;'
 
+psql-source-summary:
+	$(PSQL_SOURCE_CMD) -c 'SELECT * FROM summary_vw;'
+
+# Destination
 psql-dest:
 	$(PSQL_DEST_CMD)
 
@@ -67,3 +84,12 @@ psql-dest-version:
 
 psql-dest-city:
 	$(PSQL_DEST_CMD) -c 'SELECT * FROM public.city;'
+
+psql-dest-summary:
+	$(PSQL_DEST_CMD) -c 'SELECT * FROM summary_vw;'
+
+psql-dest-ndc:
+	$(PSQL_DEST_CMD) -c "SELECT table_schema AS schema, table_name AS table, constraint_name FROM information_schema.table_constraints WHERE constraint_type = 'FOREIGN KEY' AND is_deferrable = 'NO';"
+
+psql-dest-triggers:
+	$(PSQL_DEST_CMD) -c "SELECT tgname AS name, tgisinternal AS internal, tgenabled != 'D' AS enabled, tgconstraint != 0 AS integrity FROM pg_trigger;"

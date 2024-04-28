@@ -1,6 +1,15 @@
+# --all-schemas
+# --schemas public,something
+# --schema-first
+# --schema-only
+
+# --exclude ah_ee_masters,public.ah_ee_activity
+exclude:
+  - ah_ee_masters
+  - public.ah_ee_activity
 
 groups:
   er:
     city
     product
-    country
+    country 

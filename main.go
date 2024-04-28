@@ -13,28 +13,66 @@ import (
 func main() {
 	ctx := context.Background()
 
-	s := struct {
-		Host     string
-		Port     int
-		UserName string
-		Password string
-		Database string
-	}{
-		Host:     "localhost",
-		Port:     5437,
-		UserName: "source_user",
-		Password: "source_pw",
-		Database: "postgres",
-	}
-
-	source, err := datasource.NewReadDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
-		os.Exit(1)
-	}
-
+	source, destination := tempGetDataSources(ctx)
 	defer source.DB.Close(ctx)
+	defer destination.DB.Close(ctx)
 
+	//FAKE TASK RESOLVER
+	tasks := []sync.Task{
+		{
+			Table:           db.Table{Schema: "public", Name: "country"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		{
+			Table:           db.Table{Schema: "public", Name: "city"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		/* {
+			Table:           db.Table{Schema: "public", Name: "store"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		{
+			Table:           db.Table{Schema: "public", Name: "users"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		{
+			Table:           db.Table{Schema: "public", Name: "product"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		{
+			Table:           db.Table{Schema: "public", Name: "sale"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		{
+			Table:           db.Table{Schema: "public", Name: "order_status"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		},
+		{
+			Table:           db.Table{Schema: "public", Name: "status_name"},
+			Preserve:        false,
+			Truncate:        true,
+			DeferContraints: true,
+		}, */
+	}
+
+	sync.Sync(ctx, tasks, source, destination)
+}
+
+func tempGetDataSources(ctx context.Context) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
 	d := struct {
 		Host     string
 		Port     int
@@ -55,34 +93,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	defer destination.DB.Close(ctx)
+	s := struct {
+		Host     string
+		Port     int
+		UserName string
+		Password string
+		Database string
+	}{
+		Host:     "localhost",
+		Port:     5437,
+		UserName: "source_user",
+		Password: "source_pw",
+		Database: "postgres",
+	}
 
-	schemas, err := source.GetSchemas(ctx)
+	source, err := datasource.NewReadDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "GetSchemas failed %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println(schemas)
-
-	tables, err := source.GetTables(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "GetTables failed %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println(tables)
-
-	sync := sync.NewTableSync(source, destination)
-	err = sync.Sync(ctx, "country", "")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Sync failed %v\n", err)
-		os.Exit(1)
-	}
-
-	err = sync.Sync(ctx, "city", "")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Sync failed %v\n", err)
-		os.Exit(1)
-	}
+	return source, destination
 }

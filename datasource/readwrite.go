@@ -33,13 +33,11 @@ func NewReadWriteDataSource(Name string, Url string) (*ReadWriteDatasource, erro
 		return &ReadWriteDatasource{}, fmt.Errorf("db StatusCheck failed: %w", err)
 	}
 
-	fmt.Printf("%s DB connection successful\n", datasource.Name)
-
 	return &datasource, nil
 }
 
 func (rw *ReadWriteDatasource) Truncate(ctx context.Context, table string) error {
-	_, err := rw.DB.Exec(ctx, "TRUNCATE $1 CASCADE", table)
+	_, err := rw.DB.Exec(ctx, fmt.Sprintf("TRUNCATE %s CASCADE", table))
 	if err != nil {
 		return err
 	}
@@ -48,7 +46,7 @@ func (rw *ReadWriteDatasource) Truncate(ctx context.Context, table string) error
 }
 
 func (rw *ReadWriteDatasource) DeleteAll(ctx context.Context, table string) error {
-	_, err := rw.DB.Exec(ctx, "DELETE FROM $1", table)
+	_, err := rw.DB.Exec(ctx, fmt.Sprintf("DELETE FROM %s", table))
 	if err != nil {
 		return err
 	}
@@ -57,7 +55,7 @@ func (rw *ReadWriteDatasource) DeleteAll(ctx context.Context, table string) erro
 }
 
 func (rw *ReadWriteDatasource) CreateTempTable(ctx context.Context, name string, sourceTable string) error {
-	_, err := rw.DB.Exec(ctx, "CREATE TEMPORARY TABLE $1 AS TABLE $2 WITH NO DATA", name, sourceTable)
+	_, err := rw.DB.Exec(ctx, fmt.Sprintf("CREATE TEMPORARY TABLE %s AS TABLE %s WITH NO DATA", name, sourceTable))
 	if err != nil {
 		return err
 	}
@@ -66,7 +64,7 @@ func (rw *ReadWriteDatasource) CreateTempTable(ctx context.Context, name string,
 }
 
 func (rw *ReadWriteDatasource) SetSequence(ctx context.Context, sequence string, value int) error {
-	_, err := rw.DB.Exec(ctx, "SELECT setval(%s, %d)", sequence, value)
+	_, err := rw.DB.Exec(ctx, "SELECT setval($1, $2)", sequence, value)
 	if err != nil {
 		return err
 	}

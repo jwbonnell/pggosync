@@ -11,10 +11,11 @@ import (
 )
 
 type ReaderDataSource struct {
-	Url   string
-	DB    *pgx.Conn
-	Name  string
-	Debug bool
+	Url    string
+	DB     *pgx.Conn
+	Name   string
+	Tables []db.Table
+	Debug  bool
 }
 
 func NewReadDataSource(Name string, Url string) (*ReaderDataSource, error) {
@@ -35,8 +36,6 @@ func NewReadDataSource(Name string, Url string) (*ReaderDataSource, error) {
 	if err != nil {
 		return &ReaderDataSource{}, fmt.Errorf("db StatusCheck failed: %w", err)
 	}
-
-	fmt.Printf("%s DB connection successful\n", datasource.Name)
 
 	return &datasource, nil
 }

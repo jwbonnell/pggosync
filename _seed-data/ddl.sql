@@ -85,8 +85,9 @@ CREATE TABLE IF NOT EXISTS order_status (
 
 -- Dummy tables for testing
 CREATE TABLE dummy (
-  id SERIAL PRIMARY KEY,
-  name TEXT
+  id INT NOT NULL,
+  name TEXT,
+  PRIMARY KEY (id)
 );
 
 CREATE OR REPLACE FUNCTION do_something()
@@ -98,3 +99,38 @@ END;
 $$
 LANGUAGE plpgsql;
 CREATE TRIGGER do_something_trigger BEFORE INSERT OR UPDATE ON dummy FOR EACH ROW EXECUTE PROCEDURE do_something();
+
+-- Dummy sequence
+CREATE SEQUENCE dummy_seq START 1;
+
+-- Dummy tables for testing
+CREATE TABLE dummy_truncate (
+  id INT NOT NULL,
+  name TEXT,
+  PRIMARY KEY (id)
+);
+
+CREATE TABLE dummy_delete (
+  id INT NOT NULL,
+  name TEXT,
+  PRIMARY KEY (id)
+);
+
+-- Dummy tables for testing
+CREATE TABLE dummy_seed (
+  id INT NOT NULL,
+  name TEXT,
+  PRIMARY KEY (id)
+);
+
+CREATE OR REPLACE VIEW summary_vw AS
+   SELECT 
+      (SELECT count(*) as product_rows FROM public.product),
+      (SELECT count(*) as city_rows FROM public.city),
+      (SELECT count(*) as country_rows FROM public.country), 
+      (SELECT count(*) as store_rows FROM public.store), 
+      (SELECT count(*) as users_rows FROM public.users),
+      (SELECT count(*) as sale_rows FROM public.sale),
+      (SELECT count(*) as order_rows FROM public.order_status), 
+      (SELECT count(*) as status_rows FROM public.status_name) 
+;

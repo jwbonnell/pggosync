@@ -21,54 +21,55 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 	}
 }
 
-func (t *TableSync) Sync(ctx context.Context, table string, filter string, truncate bool, preserve bool) error {
-	if !truncate {
+func (t *TableSync) Sync(ctx context.Context, task *Task) error {
+	if !task.Truncate {
 		//TODO PK CHECK
 		ttName := db.GenTempTableName(0)
-		err := t.destination.CreateTempTable(ctx, ttName, table)
+		err := t.destination.CreateTempTable(ctx, ttName, task.Table.FullName())
 		if err != nil {
 			return fmt.Errorf("datasource.CreateTempTable: %w", err)
 		}
 
-		err = t.copyTo(ctx, table, ttName, "")
+		err = t.copy(ctx, task.Table.FullName(), ttName, "")
 		if err != nil {
 			return fmt.Errorf("TableSync.copyTo temp table %s: %w", ttName, err)
 		}
 
+		action := ""
 		onConflict := "NOTHING"
-		if !preserve {
-			onConflict = 
+		if !task.Preserve {
+			onConflict = ""
 		}
 
-		err = t.destination.InsertFromTempTable(ctx, ttName, table, []string{}, onConflict, action)
+		err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), []string{}, onConflict, action)
+		if err != nil {
+			return fmt.Errorf("TableSync.InsertFromTempTable %w", err)
+		}
 
 	} else {
+		if task.DeferContraints {
+			err := t.destination.DeleteAll(ctx, task.Table.FullName())
+			if err != nil {
+				return fmt.Errorf("TableSync DeleteAll %w", err)
+			}
+		} else {
+			err := t.destination.Truncate(ctx, task.Table.FullName())
+			if err != nil {
+				return fmt.Errorf("TableSync Truncate %w", err)
+			}
+		}
 
-	}
-
-	return t.copy(ctx, table, filter)
-}
-
-func (t *TableSync) copy(ctx context.Context, table string, filter string) error {
-	//TODO add support for only copying certain columns
-	var buf bytes.Buffer
-	sconn := t.source.DB.PgConn()
-	_, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT * FROM %s %s ) TO STDOUT", table, filter))
-	if err != nil {
-		return err
-	}
-
-	dconn := t.destination.DB.PgConn()
-	_, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s FROM STDIN", table))
-	if err != nil {
-		return err
+		err := t.copy(ctx, task.Table.FullName(), task.Table.FullName(), task.Filter)
+		if err != nil {
+			return fmt.Errorf("TableSync.copy %w", err)
+		}
 	}
 
 	return nil
 }
 
-func (t *TableSync) copyTo(ctx context.Context, sourceTable string, destTable string, filter string) error {
-	//TODO aconsider merging copy anc copyTo, keeping separate for now
+func (t *TableSync) copy(ctx context.Context, sourceTable string, destTable string, filter string) error {
+	//TODO consider merging copy anc copyTo, keeping separate for now
 	var buf bytes.Buffer
 	sconn := t.source.DB.PgConn()
 	_, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT * FROM %s %s ) TO STDOUT", sourceTable, filter))
@@ -82,39 +83,5 @@ func (t *TableSync) copyTo(ctx context.Context, sourceTable string, destTable st
 		return err
 	}
 
-	return nil
-}
-
-func (t *TableSync) handleNonDeferrableConstraints() error {
-	//constraints, err := t.source.GetNonDeferrableConstraints()
-	/* if err != nil {
-		return err
-	} */
-
-	//for _, con := range constraints {
-	//destination.execute("ALTER TABLE #{quote_ident_full(table)} ALTER CONSTRAINT #{quote_ident(constraint)} DEFERRABLE")
-	//}
-
-	//destination.execute("SET CONSTRAINTS ALL DEFERRED")
-
-	// create a transaction on the source
-	// to ensure we get a consistent snapshot
-	/* source.transaction do
-	yield
-	end */
-	//YIELD here in ruby must return control to another process to do the sync
-
-	// set them back
-	// there are 3 modes: DEFERRABLE INITIALLY DEFERRED, DEFERRABLE INITIALLY IMMEDIATE, and NOT DEFERRABLE
-	// we only update NOT DEFERRABLE
-	// https://www.postgresql.org/docs/current/sql-set-constraints.html
-
-	/* destination.execute("SET CONSTRAINTS ALL IMMEDIATE")
-
-	table_constraints.each do |table, constraints|
-	  constraints.each do |constraint|
-		 destination.execute("ALTER TABLE #{quote_ident_full(table)} ALTER CONSTRAINT #{quote_ident(constraint)} NOT DEFERRABLE")
-	  end
-	end */
 	return nil
 }
