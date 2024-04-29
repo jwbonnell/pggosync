@@ -31,7 +31,7 @@ func main() {
 			Truncate:        true,
 			DeferContraints: true,
 		},
-		/* {
+		{
 			Table:           db.Table{Schema: "public", Name: "store"},
 			Preserve:        false,
 			Truncate:        true,
@@ -66,7 +66,7 @@ func main() {
 			Preserve:        false,
 			Truncate:        true,
 			DeferContraints: true,
-		}, */
+		},
 	}
 
 	sync.Sync(ctx, tasks, source, destination)

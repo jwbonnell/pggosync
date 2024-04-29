@@ -22,6 +22,7 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 }
 
 func (t *TableSync) Sync(ctx context.Context, task *Task) error {
+	
 	if !task.Truncate {
 		//TODO PK CHECK
 		ttName := db.GenTempTableName(0)
