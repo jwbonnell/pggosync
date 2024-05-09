@@ -5,8 +5,7 @@
 # 			[ ] localhost destination is required without explicit opt in
 #			[ ] Confirmation prompts
 # 		[ ] CLI frameworks
-#        [ ] charmed/bubbletea for
-# 			[ ] ardanlabs/conf/v3 for cli flag, env var and args handling if bubbletea does not handle it
+#        [ ] charmed/bubbletea for TUI
 # 		[ ] Support passing in dynamic values/params, like {erno}
 # [ ] Main
 # 		[ ] Main run function
@@ -33,6 +32,9 @@
 #     [X] create temp table
 #     [X] delete 
 #     [X] insert w/ on conflict support
+
+# [ ] Prepared Statements
+# [ ] Delete with filter support
 # [ ] Schema Sync
 #		[ ] Figure out how to use pg_dump and pg_restore to accomplish this, or use Copy?
 #	
