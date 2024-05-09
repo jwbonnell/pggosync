@@ -22,7 +22,7 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 }
 
 func (t *TableSync) Sync(ctx context.Context, task *Task) error {
-	
+
 	if !task.Truncate {
 		//TODO PK CHECK
 		ttName := db.GenTempTableName(0)
@@ -33,7 +33,7 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 
 		err = t.copy(ctx, task.Table.FullName(), ttName, "")
 		if err != nil {
-			return fmt.Errorf("TableSync.copyTo temp table %s: %w", ttName, err)
+			return fmt.Errorf("TableSync.copy temp table %s: %w", ttName, err)
 		}
 
 		action := ""
@@ -70,7 +70,6 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 }
 
 func (t *TableSync) copy(ctx context.Context, sourceTable string, destTable string, filter string) error {
-	//TODO consider merging copy anc copyTo, keeping separate for now
 	var buf bytes.Buffer
 	sconn := t.source.DB.PgConn()
 	_, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT * FROM %s %s ) TO STDOUT", sourceTable, filter))

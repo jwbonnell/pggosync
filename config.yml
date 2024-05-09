@@ -2,14 +2,27 @@
 # --schemas public,something
 # --schema-first
 # --schema-only
+# --tables
+# --groups
 
 # --exclude ah_ee_masters,public.ah_ee_activity
 exclude:
-  - ah_ee_masters
-  - public.ah_ee_activity
+  - products
 
 groups:
-  er:
-    city
-    product
-    country 
+  country:
+    city: "where country_id = 10"
+    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
+    country: "where country_id = 10"
+
+  country_var_1:
+    city: "where country_id = {1}"
+    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = {1})"
+    country: "where country_id = {1}"
+
+data:
+  transformations:
+    first_name: first_name
+    last_name: last_name
+    email_addr: unique email
+    

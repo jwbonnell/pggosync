@@ -12,7 +12,7 @@ import (
 )
 
 type Task struct {
-	Table           db.Table
+	db.Table
 	Filter          string
 	Preserve        bool
 	Truncate        bool
