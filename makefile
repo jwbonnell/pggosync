@@ -14,7 +14,7 @@
 #		[X] concurrency setup
 #		[X] Task struct
 #		[X] Defer constraints
-#		[ ] set up a task per table 
+#		[X] set up a task per table
 #		[ ] Support table and schema exclusion
 #		[ ] Support omitting sensitive data columns
 #		

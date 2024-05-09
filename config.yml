@@ -1,11 +1,4 @@
-# --all-schemas
-# --schemas public,something
-# --schema-first
-# --schema-only
-# --tables
-# --groups
 
-# --exclude ah_ee_masters,public.ah_ee_activity
 exclude:
   - products
 
@@ -19,10 +12,4 @@ groups:
     city: "where country_id = {1}"
     store: "where city_id IN (SELECT city_id FROM city WHERE country_id = {1})"
     country: "where country_id = {1}"
-
-data:
-  transformations:
-    first_name: first_name
-    last_name: last_name
-    email_addr: unique email
     

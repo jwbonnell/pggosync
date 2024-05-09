@@ -88,7 +88,7 @@ func main() {
 				},
 			},
 			{
-				Name:    "template",
+				Name:    "example sub command",
 				Aliases: []string{"t"},
 				Usage:   "options for task templates",
 				Subcommands: []*cli.Command{
@@ -116,119 +116,6 @@ func main() {
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func Sync(tables []string) {
-	ctx := context.Background()
-
-	source, destination := tempGetDataSources(ctx)
-	defer source.DB.Close(ctx)
-	defer destination.DB.Close(ctx)
-
-	tasks := []sync.Task{}
-	for i := range tables {
-		tasks = append(tasks, sync.Task{
-			Table:           db.Table{Schema: "public", Name: tables[i]},
-			Preserve:        false,
-			Truncate:        true,
-			DeferContraints: true,
-		})
-	}
-
-	sync.Sync(ctx, tasks, source, destination)
-}
-
-func mainMain() {
-	ctx := context.Background()
-
-	source, destination := tempGetDataSources(ctx)
-	defer source.DB.Close(ctx)
-	defer destination.DB.Close(ctx)
-
-	var c config.Config
-	tmpGroupID := "country_var_1"
-	tmpParams := "33"
-	data, _ := os.ReadFile("config.yml")
-
-	err := yaml.Unmarshal(data, &c)
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
-	fmt.Printf("--- t:\n%v\n\n", c)
-
-	tasks, err := sync.ResolveTasks(c, tmpGroupID, []string{tmpParams})
-	if err != nil {
-		log.Fatalf("config.Resolve: %v", err)
-	}
-
-	err = sync.Sync(ctx, tasks, source, destination)
-	if err != nil {
-		log.Fatalf("sync.Sync: %v", err)
-	}
-}
-
-func main3() {
-	ctx := context.Background()
-
-	source, destination := tempGetDataSources(ctx)
-	defer source.DB.Close(ctx)
-	defer destination.DB.Close(ctx)
-
-	//FAKE TASK RESOLVER
-	tasks := []sync.Task{
-		{
-			Table:           db.Table{Schema: "public", Name: "country"},
-			Filter:          "where country_id = 40",
-			Preserve:        false,
-			Truncate:        true,
-			DeferContraints: true,
-		},
-		{
-			Table:           db.Table{Schema: "public", Name: "city"},
-			Filter:          "where country_id = 40",
-			Preserve:        false,
-			Truncate:        true,
-			DeferContraints: true,
-		},
-		/*		{
-					Table:           db.Table{Schema: "public", Name: "store"},
-					Preserve:        false,
-					Truncate:        true,
-					DeferContraints: true,
-				},
-				{
-					Table:           db.Table{Schema: "public", Name: "users"},
-					Preserve:        false,
-					Truncate:        true,
-					DeferContraints: true,
-				},
-				{
-					Table:           db.Table{Schema: "public", Name: "product"},
-					Preserve:        false,
-					Truncate:        true,
-					DeferContraints: true,
-				},
-				{
-					Table:           db.Table{Schema: "public", Name: "sale"},
-					Preserve:        false,
-					Truncate:        true,
-					DeferContraints: true,
-				},
-				{
-					Table:           db.Table{Schema: "public", Name: "order_status"},
-					Preserve:        false,
-					Truncate:        true,
-					DeferContraints: true,
-				},
-				{
-					Table:           db.Table{Schema: "public", Name: "status_name"},
-					Preserve:        false,
-					Truncate:        true,
-					DeferContraints: true,
-				},*/
-	}
-
-	sync.Sync(ctx, tasks, source, destination)
 }
 
 func tempGetDataSources(ctx context.Context) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
