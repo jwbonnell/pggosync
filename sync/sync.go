@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -14,7 +15,7 @@ func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource
 	maxConcurrency := 1 // Allowed to run at the same time
 
 	// Create a buffered channel with a capacity of maxConcurrency
-	throttle := make(chan struct{}, maxConcurrency)
+	taskQueue := make(chan Task, maxConcurrency)
 
 	var wg sync.WaitGroup
 
@@ -25,6 +26,7 @@ func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource
 
 	defer func() {
 		if err != nil {
+			fmt.Println("Rolling back...")
 			tx.Rollback(ctx)
 		} else {
 			tx.Commit(ctx)
@@ -43,13 +45,31 @@ func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource
 		return err
 	}
 
+	wg.Add(len(tasks))
+	for range maxConcurrency {
+		go func() {
+			for task := range taskQueue {
+				fmt.Printf("Processing Task %s: syncing...\n", task.FullName())
+				ts := NewTableSync(source, dest)
+				err = ts.Sync(ctx, &task)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), err)
+				}
+
+				fmt.Printf("Task Complete %s \n", task.FullName())
+				wg.Done()
+			}
+
+		}()
+	}
+
 	for i := range tasks {
-		wg.Add(1)
-		go tasks[i].Run(ctx, throttle, &wg, source, dest)
+		fmt.Printf("Write task to queue: %s \n", tasks[i].FullName())
+		taskQueue <- tasks[i]
 	}
 
 	wg.Wait()
-	close(throttle)
+	close(taskQueue)
 
 	fmt.Println("Restore Contraints")
 	err = db.RestoreContraints(ctx, tx.Conn(), ndc)
