@@ -1,6 +1,7 @@
 # ==============================================================================
 # Tasks
 # [ ] CLI Layer
+# 		[ ] flags: truncate, preserve, defer constraints
 # 		[ ] Safety checks
 # 			[ ] localhost destination is required without explicit opt in
 #			[ ] Confirmation prompts
@@ -10,10 +11,7 @@
 # [ ] Main
 # 		[ ] Main run function
 # 		[ ] Param validation
-#		[X] concurrency setup
-#		[X] Task struct
 #		[X] Defer constraints
-#		[X] set up a task per table
 #		[ ] Support table and schema exclusion
 #		[ ] Support omitting sensitive data columns
 #		
@@ -21,17 +19,9 @@
 # 		[X] truncate support
 # 		[X] defer constraints support
 # 		[ ] preserve existing data support
-# 		[ ] 
-# [X] Create Reader Datasource Interface
-#     [X] Version
-#     [X] Get Schemas
-#     [X] Get Tables
-# [X] Create ReadWriter Datasource Interface 
-# 		[X] truncate	
-#     [X] update sequences
-#     [X] create temp table
-#     [X] delete 
-#     [X] insert w/ on conflict support
+# 		[ ] SCOPE - possibly support setting ON UPDATE RESTRICT and ON DELETE RESTRICT constraints to NO ACTION
+#					and restore when sync is complete. See information_schema.referential_constraints to start.
+# 		[ ] Finish insert w/ on conflict support
 
 # [ ] Prepared Statements
 # [ ] Delete with filter support

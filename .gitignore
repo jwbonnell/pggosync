@@ -1,3 +1,5 @@
 backups
 sql/testsync.pgsql
 .idea
+.config/
+.test-config/
