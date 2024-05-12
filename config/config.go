@@ -80,16 +80,25 @@ func (c *ConfigHandler) saveConfig(name string, configYaml string) error {
 	return nil
 }
 
-func (c *ConfigHandler) GetConfig(name string) (Config, error) {
+func (c *ConfigHandler) Getonfig(name string) (Config, error) {
 	def, err := c.GetDefault()
 	if err != nil {
 		return Config{}, err
 	}
 
-	return c.getConfig(def)
+	return c.GetConfig(def)
 }
 
-func (c *ConfigHandler) getConfig(name string) (Config, error) {
+func (c *ConfigHandler) GetDefaultConfig(name string) (Config, error) {
+	def, err := c.GetDefault()
+	if err != nil {
+		return Config{}, err
+	}
+
+	return c.Getonfig(def)
+}
+
+func (c *ConfigHandler) GetConfig(name string) (Config, error) {
 	dir, err := c.PathHandler.UserConfigDir()
 	if err != nil {
 		return Config{}, err
@@ -125,7 +134,7 @@ func (c *ConfigHandler) GetDefault() (string, error) {
 
 	configPath := filepath.Join(dir, "pggosync", "default")
 	raw, err := os.ReadFile(configPath)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return "", err
 	}
 

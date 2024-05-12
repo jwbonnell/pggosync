@@ -36,7 +36,7 @@ func TestConfigHandler_InitConfig(t *testing.T) {
 	handler := NewConfigHandler(TestPathHandler{})
 	err := handler.InitConfig("taco")
 	assert.NoError(t, err)
-	config, err := handler.getConfig("taco")
+	config, err := handler.GetConfig("taco")
 	assert.NoError(t, err)
 
 	_, ok := config.Groups["country"]

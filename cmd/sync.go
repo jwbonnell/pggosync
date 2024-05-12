@@ -13,7 +13,7 @@ import (
 	"os"
 )
 
-func syncCmd() *cli.Command {
+func syncCmd(handler *config.ConfigHandler) *cli.Command {
 	cmd := cli.Command{
 		Name:  "sync",
 		Usage: "Sync one or more groups",
@@ -30,6 +30,7 @@ func syncCmd() *cli.Command {
 			},
 		},
 		Action: func(cCtx *cli.Context) error {
+			initRequired(handler)
 			groups := cCtx.StringSlice("group")
 			tables := cCtx.StringSlice("table")
 

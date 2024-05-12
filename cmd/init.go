@@ -5,13 +5,12 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func initCmd() *cli.Command {
+func initCmd(handler *config.ConfigHandler) *cli.Command {
 	cmd := cli.Command{
 		Name:    "init",
 		Aliases: []string{"i"},
 		Usage:   "initialize a new config",
 		Action: func(cCtx *cli.Context) error {
-			handler := config.NewConfigHandler(config.OSPathHandler{})
 			configID := cCtx.Args().First()
 			if configID == "" {
 				configID = "default"
