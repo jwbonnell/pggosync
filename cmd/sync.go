@@ -36,8 +36,7 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 
 			var c config.Config
 			data, _ := os.ReadFile("config.yml")
-			err := yaml.Unmarshal(data, &c)
-			if err != nil {
+			if err := yaml.Unmarshal(data, &c); err != nil {
 				log.Fatalf("error: %v", err)
 			}
 			fmt.Printf("--- t:\n%v\n\n", c)
@@ -52,8 +51,7 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 			defer source.DB.Close(cCtx.Context)
 			defer destination.DB.Close(cCtx.Context)
 
-			err = sync.Sync(cCtx.Context, tasks, source, destination)
-			if err != nil {
+			if err = sync.Sync(cCtx.Context, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

@@ -54,12 +54,11 @@ func NewConfigHandler(path PathHandler) *ConfigHandler {
 }
 
 func (c *ConfigHandler) InitConfig(name string) error {
-	err := c.SetDefault(name)
-	if err != nil {
+	if err := c.SetDefault(name); err != nil {
 		return err
 	}
-	err = c.saveConfig(name, initialConfig)
-	if err != nil {
+
+	if err := c.saveConfig(name, initialConfig); err != nil {
 		return err
 	}
 	return nil
@@ -68,13 +67,12 @@ func (c *ConfigHandler) InitConfig(name string) error {
 func (c *ConfigHandler) saveConfig(name string, configYaml string) error {
 	dir, err := c.PathHandler.UserConfigDir()
 	configPath := filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))
-	err = os.MkdirAll(filepath.Dir(configPath), 0700)
-	if err != nil {
+
+	if err = os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		return err
 	}
 
-	err = os.WriteFile(configPath, []byte(configYaml), 0600)
-	if err != nil {
+	if err = os.WriteFile(configPath, []byte(configYaml), 0600); err != nil {
 		return err
 	}
 	return nil
@@ -117,8 +115,7 @@ func (c *ConfigHandler) GetConfig(name string) (Config, error) {
 		log.Fatal(err)
 	}
 
-	err = yaml.Unmarshal(raw, &config)
-	if err != nil {
+	if err = yaml.Unmarshal(raw, &config); err != nil {
 		log.Fatalf("config.GetConfig: %v", err)
 	}
 
@@ -149,13 +146,11 @@ func (c *ConfigHandler) SetDefault(def string) error {
 	}
 
 	configPath := filepath.Join(dir, "pggosync", "default")
-	err = os.MkdirAll(filepath.Dir(configPath), 0700)
-	if err != nil {
+	if err = os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		return err
 	}
 
-	err = os.WriteFile(configPath, []byte(def), 0600)
-	if err != nil {
+	if err = os.WriteFile(configPath, []byte(def), 0600); err != nil {
 		return err
 	}
 
