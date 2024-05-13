@@ -11,8 +11,8 @@ import (
 
 const initialConfig string = `
 # Example: postgres://${USERNAME}:${PASSWORD}@${HOST}:${PORT}/${DATABASE}
-source: 
-destination: 
+source: postgres://source_user:source_pw@localhost:5437/postgres
+destination: postgres://dest_user:dest_pw@localhost:5438/postgres
 
 exclude:
   - products
