@@ -1,16 +1,10 @@
 package cmd
 
 import (
-	"context"
-	"fmt"
 	"github.com/jwbonnell/pggosync/config"
-	"github.com/jwbonnell/pggosync/datasource"
-	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/sync"
 	"github.com/urfave/cli/v2"
-	"gopkg.in/yaml.v3"
 	"log"
-	"os"
 )
 
 func syncCmd(handler *config.ConfigHandler) *cli.Command {
@@ -34,12 +28,10 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 			groups := cCtx.StringSlice("group")
 			tables := cCtx.StringSlice("table")
 
-			var c config.Config
-			data, _ := os.ReadFile("config.yml")
-			if err := yaml.Unmarshal(data, &c); err != nil {
-				log.Fatalf("error: %v", err)
+			c, err := handler.GetCurrentConfig()
+			if err != nil {
+				log.Fatalf("handler.GetCurrentConfig: %v", err)
 			}
-			fmt.Printf("--- t:\n%v\n\n", c)
 
 			resolver := sync.NewTaskResolver(&c)
 			tasks, err := resolver.Resolve(groups, tables)
@@ -47,7 +39,7 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}
 
-			source, destination := tempGetDataSources(cCtx.Context)
+			source, destination := setupDatasources(cCtx.Context, &c)
 			defer source.DB.Close(cCtx.Context)
 			defer destination.DB.Close(cCtx.Context)
 
@@ -59,48 +51,4 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 		},
 	}
 	return &cmd
-}
-
-func tempGetDataSources(ctx context.Context) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
-	d := struct {
-		Host     string
-		Port     int
-		UserName string
-		Password string
-		Database string
-	}{
-		Host:     "localhost",
-		Port:     5438,
-		UserName: "dest_user",
-		Password: "dest_pw",
-		Database: "postgres",
-	}
-
-	destination, err := datasource.NewReadWriteDataSource("destination", db.BuildUrl(d.Host, d.Port, d.UserName, d.Password, d.Database))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
-		os.Exit(1)
-	}
-
-	s := struct {
-		Host     string
-		Port     int
-		UserName string
-		Password string
-		Database string
-	}{
-		Host:     "localhost",
-		Port:     5437,
-		UserName: "source_user",
-		Password: "source_pw",
-		Database: "postgres",
-	}
-
-	source, err := datasource.NewReadDataSource("source", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
-		os.Exit(1)
-	}
-
-	return source, destination
 }

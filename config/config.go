@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const initialConfig string = `
@@ -29,8 +30,10 @@ groups:
 `
 
 type Config struct {
-	Exclude []string                     `yaml:"exclude"`
-	Groups  map[string]map[string]string `yaml:"groups"`
+	Source      string                       `yaml:"source"`
+	Destination string                       `yaml:"destination"`
+	Exclude     []string                     `yaml:"exclude"`
+	Groups      map[string]map[string]string `yaml:"groups"`
 }
 
 type PathHandler interface {
@@ -78,22 +81,13 @@ func (c *ConfigHandler) saveConfig(name string, configYaml string) error {
 	return nil
 }
 
-func (c *ConfigHandler) Getonfig(name string) (Config, error) {
+func (c *ConfigHandler) GetCurrentConfig() (Config, error) {
 	def, err := c.GetDefault()
 	if err != nil {
 		return Config{}, err
 	}
 
 	return c.GetConfig(def)
-}
-
-func (c *ConfigHandler) GetDefaultConfig(name string) (Config, error) {
-	def, err := c.GetDefault()
-	if err != nil {
-		return Config{}, err
-	}
-
-	return c.Getonfig(def)
 }
 
 func (c *ConfigHandler) GetConfig(name string) (Config, error) {
@@ -155,4 +149,35 @@ func (c *ConfigHandler) SetDefault(def string) error {
 	}
 
 	return nil
+}
+
+func (c *ConfigHandler) ListConfigs() ([]string, error) {
+	dir, err := c.PathHandler.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	configPath := filepath.Join(dir, "pggosync")
+	files, err := os.ReadDir(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var configs []string
+	for _, f := range files {
+		if f.Name() == "default" {
+			continue
+		}
+
+		parts := strings.Split(f.Name(), ".")
+		switch {
+		case len(parts) != 2:
+			return nil, fmt.Errorf("listConfigs: invalid config file name: %s", f.Name())
+		case parts[1] != "yaml":
+			return nil, fmt.Errorf("listConfigs: invalid config file type: %s", f.Name())
+		default:
+			configs = append(configs, parts[0])
+		}
+	}
+
+	return configs, nil
 }

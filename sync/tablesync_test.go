@@ -2,7 +2,6 @@ package sync
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/jwbonnell/pggosync/datasource"
@@ -13,7 +12,6 @@ import (
 func TestSync_UseTruncate(t *testing.T) {
 	ctx := context.Background()
 	ts, err := getTableSyncStruct()
-	fmt.Println(ts.source.Url, ts.destination.Url)
 	assert.Nil(t, err)
 	t1 := Task{Table: db.Table{Schema: "public", Name: "country"}, Truncate: true, Preserve: false}
 	err = ts.Sync(ctx, &t1)
