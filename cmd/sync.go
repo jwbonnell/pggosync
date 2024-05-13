@@ -39,7 +39,7 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}
 
-			source, destination := setupDatasources(cCtx.Context, &c)
+			source, destination := setupDatasources(&c)
 			defer source.DB.Close(cCtx.Context)
 			defer destination.DB.Close(cCtx.Context)
 

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
@@ -45,16 +44,22 @@ func initRequired(handler *config.ConfigHandler) {
 	}
 }
 
-func setupDatasources(ctx context.Context, c *config.Config) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
+func setupDatasources(c *config.Config) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
 	destination, err := datasource.NewReadWriteDataSource("destination", c.Destination)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
+		_, err := fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
+		if err != nil {
+			return nil, nil
+		}
 		os.Exit(1)
 	}
 
 	source, err := datasource.NewReadDataSource("source", c.Source)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
+		_, err := fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
+		if err != nil {
+			return nil, nil
+		}
 		os.Exit(1)
 	}
 

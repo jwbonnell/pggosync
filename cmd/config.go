@@ -29,12 +29,12 @@ func configCmd(handler *config.ConfigHandler) *cli.Command {
 					if err != nil {
 						return err
 					}
-					config, err := handler.GetConfig(configID)
+					c, err := handler.GetConfig(configID)
 					if err != nil {
 						return err
 					}
 
-					out, err := yaml.Marshal(config)
+					out, err := yaml.Marshal(c)
 					if err != nil {
 						return err
 					}
@@ -64,7 +64,7 @@ func configCmd(handler *config.ConfigHandler) *cli.Command {
 						return fmt.Errorf("config %s does not exist", configID)
 					}
 
-					if handler.SetDefault(configID); err != nil {
+					if err := handler.SetDefault(configID); err != nil {
 						return err
 					}
 					return nil
