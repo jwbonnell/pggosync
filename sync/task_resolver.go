@@ -62,9 +62,10 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 		filter = opts.ApplyParamToFilter(params, filter)
 
 		tasks = append(tasks, Task{
-			Table:    db.Table{Schema: schema, Name: table},
-			Filter:   filter,
-			Truncate: true,
+			Table:            db.Table{Schema: schema, Name: table},
+			Filter:           filter,
+			Truncate:         true,
+			DeferConstraints: true,
 		})
 	}
 	return tasks, nil

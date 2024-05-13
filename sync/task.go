@@ -6,8 +6,8 @@ import (
 
 type Task struct {
 	db.Table
-	Filter          string
-	Preserve        bool
-	Truncate        bool
-	DeferContraints bool
+	Filter           string
+	Preserve         bool
+	Truncate         bool
+	DeferConstraints bool
 }

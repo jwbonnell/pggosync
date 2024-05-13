@@ -48,7 +48,7 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 		}
 
 	} else {
-		if task.DeferContraints {
+		if task.DeferConstraints {
 			err := t.destination.DeleteAll(ctx, task.Table.FullName())
 			if err != nil {
 				return fmt.Errorf("TableSync DeleteAll %w", err)
