@@ -75,3 +75,26 @@ from sale;
 INSERT INTO dummy
    select id, concat('DUMMY_', id) 
    FROM GENERATE_SERIES(1, current_setting('my.number_of_dummy_recs')::int) as id;
+
+-- Additional seed data used for testing
+
+DO
+$$
+    DECLARE
+        countryId INT := 1000;
+        cityId INT := 1000;
+        num_recs INT := 10;
+
+    BEGIN
+        FOR i IN 1 .. num_recs LOOP
+                RAISE NOTICE 'COUNTRY %', countryId;
+                INSERT INTO country (country_id, country_name) VALUES (countryId, 'Country ' || countryId);
+                FOR j IN 1 .. num_recs LOOP
+                        RAISE NOTICE 'CITY %', cityId;
+                        INSERT INTO city (city_id, city_name, country_id) VALUES (cityId, 'City ' || cityId, countryId);
+                        cityId = cityId + 1;
+                    END LOOP;
+                countryId = countryId + 1;
+            END LOOP;
+    END;
+$$

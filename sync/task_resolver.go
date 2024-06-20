@@ -9,11 +9,14 @@ import (
 )
 
 type TaskResolver struct {
-	Config *config.Config
+	Config           *config.Config
+	truncate         bool
+	preserve         bool
+	deferConstraints bool
 }
 
-func NewTaskResolver(cfg *config.Config) *TaskResolver {
-	return &TaskResolver{Config: cfg}
+func NewTaskResolver(cfg *config.Config, truncate bool, preserve bool, deferConstraints bool) *TaskResolver {
+	return &TaskResolver{Config: cfg, truncate: truncate, preserve: preserve, deferConstraints: deferConstraints}
 }
 
 func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task, error) {
@@ -64,8 +67,9 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 		tasks = append(tasks, Task{
 			Table:            db.Table{Schema: schema, Name: table},
 			Filter:           filter,
-			Truncate:         true,
-			DeferConstraints: true,
+			Preserve:         tr.preserve,
+			Truncate:         tr.truncate,
+			DeferConstraints: tr.deferConstraints,
 		})
 	}
 	return tasks, nil

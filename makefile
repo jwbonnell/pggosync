@@ -27,7 +27,8 @@
 # [ ] Delete with filter support
 # [ ] Schema Sync
 #		[ ] Figure out how to use pg_dump and pg_restore to accomplish this, or use Copy?
-#	
+# [ ] ERRORS
+# 		[ ] Update goroutines to handle error appropriately using select or something - sync.go
 # Future
 # 		* Batch support for large tables
 
@@ -50,6 +51,11 @@ reset-docker-databases:
 	docker volume rm pggosync_dest-db-data
 	docker compose up -d --force-recreate
 
+# ==============================================================================
+# CLI Commands
+
+pggosync_truncate:
+	go run main.go sync --group country_var_1:2 --truncate
 
 # ==============================================================================
 # Database commands

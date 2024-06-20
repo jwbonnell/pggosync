@@ -74,10 +74,7 @@ func (rw *ReadWriteDatasource) SetSequence(ctx context.Context, sequence string,
 
 func (rw *ReadWriteDatasource) InsertFromTempTable(ctx context.Context, tempTable string, destTable string, fieldSlice []string, onConflict string, action string) error {
 	fields := strings.Join(fieldSlice[:], ",")
-	_, err := rw.DB.Exec(ctx, `
-		INSERT INTO %s %s (SELECT %s FROM %s)
-				ON CONFLICT %s DO %s
-	`, destTable, fields, fields, tempTable, onConflict, action)
+	_, err := rw.DB.Exec(ctx, `INSERT INTO $1 $2 (SELECT $3 FROM $4) ON CONFLICT $5 DO $6`, destTable, fields, fields, tempTable, onConflict, action)
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-func Execute() {
+func Execute(args []string) {
 	handler := config.ConfigHandler{
 		PathHandler: config.OSPathHandler{},
 	}
@@ -26,7 +26,7 @@ func Execute() {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(args); err != nil {
 		log.Fatal(err)
 	}
 }
