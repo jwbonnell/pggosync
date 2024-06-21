@@ -62,11 +62,11 @@ func (r *ReaderDataSource) GetTables(ctx context.Context) ([]db.Table, error) {
 	return tables, nil
 }
 
-func (r *ReaderDataSource) TableExists(ctx context.Context, name string) bool {
+/*func (r *ReaderDataSource) TableExists(ctx context.Context, name string) bool {
 	for _, table := range r.Tables {
 		table.Name
 	}
-}
+}*/
 
 func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
 	var schemas []string

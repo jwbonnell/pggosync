@@ -45,6 +45,9 @@ PSQL_DEST_CMD   := docker compose exec dest_db psql -h localhost -U dest_user -d
 test:
 	go test -count=1 -v ./... | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/''
 
+test-short:
+	go test -count=1 -v ./... -short  | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/''
+
 reset-docker-databases:
 	docker compose down
 	docker volume rm pggosync_source-db-data

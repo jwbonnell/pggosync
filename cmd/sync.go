@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"bufio"
+	"fmt"
 	"github.com/jwbonnell/pggosync/config"
+	"github.com/jwbonnell/pggosync/opts"
 	"github.com/jwbonnell/pggosync/sync"
 	"github.com/urfave/cli/v2"
 	"log"
+	"os"
 )
 
 func syncCmd(handler *config.ConfigHandler) *cli.Command {
@@ -82,7 +86,31 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 				log.Fatalf("Destination host is not localhost or 127.0.0.1, pass --no-safety to override this")
 			}
 
-			resolver := sync.NewTaskResolver(&c, truncate, preserve, deferConstraints)
+			if !skipConfirmation {
+				fmt.Print("Do you want to proceed? (yes/no): ")
+				reader := bufio.NewReader(os.Stdin)
+				response, err := reader.ReadString('\n')
+				if err != nil {
+					log.Fatalf("Error reading input: %v", err)
+				}
+
+				switch response {
+				case "yes":
+					fmt.Println("Starting sync")
+				case "no":
+					fmt.Println("Sync cancelled")
+				default:
+					log.Fatalln("Invalid input, aborting...")
+				}
+
+			}
+
+			excludedTables, err := opts.ProcessExcludedArgs(excluded)
+			if err != nil {
+				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
+			}
+
+			resolver := sync.NewTaskResolver(&c, truncate, preserve, deferConstraints, excludedTables)
 			tasks, err := resolver.Resolve(groups, tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)

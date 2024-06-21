@@ -6,6 +6,7 @@ import (
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/opts"
+	"github.com/jwbonnell/pggosync/sync/table"
 )
 
 type TaskResolver struct {
@@ -13,10 +14,11 @@ type TaskResolver struct {
 	truncate         bool
 	preserve         bool
 	deferConstraints bool
+	excluded         []db.Table
 }
 
-func NewTaskResolver(cfg *config.Config, truncate bool, preserve bool, deferConstraints bool) *TaskResolver {
-	return &TaskResolver{Config: cfg, truncate: truncate, preserve: preserve, deferConstraints: deferConstraints}
+func NewTaskResolver(cfg *config.Config, truncate bool, preserve bool, deferConstraints bool, excluded []db.Table) *TaskResolver {
+	return &TaskResolver{Config: cfg, truncate: truncate, preserve: preserve, deferConstraints: deferConstraints, excluded: excluded}
 }
 
 func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task, error) {
@@ -42,11 +44,12 @@ func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task,
 
 	}
 
+	table.GetSharedTables()
+
 	return tasks, nil
 }
 
 func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
-
 	groupID, params, err := opts.ParseGroupArg(groupArg)
 	if err != nil {
 		return nil, fmt.Errorf("TaskResolver.groupToTasks %w", err)

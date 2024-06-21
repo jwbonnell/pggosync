@@ -10,6 +10,9 @@ import (
 )
 
 func TestSync_UseTruncate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	ts, err := getTableSyncStruct()
 	assert.Nil(t, err)

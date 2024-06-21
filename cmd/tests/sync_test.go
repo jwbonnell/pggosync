@@ -32,6 +32,9 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestTruncateDeferConstraints(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
 	assert.NoError(t, err)
@@ -54,6 +57,9 @@ func TestTruncateDeferConstraints(t *testing.T) {
 }
 
 func TestSync(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
 	assert.NoError(t, err)
