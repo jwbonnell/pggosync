@@ -26,6 +26,10 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 				Usage: "Preserve existing tables",
 			},
 			&cli.BoolFlag{
+				Name:  "skip-confirmation",
+				Usage: "Skip confirmation",
+			},
+			&cli.BoolFlag{
 				Name:  "defer-constraints",
 				Usage: "Defer constraints",
 			},
@@ -50,9 +54,11 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 			truncate := cCtx.Bool("truncate")
 			preserve := cCtx.Bool("preserve")
 			noSafety := cCtx.Bool("no-safety")
+			skipConfirmation := cCtx.Bool("skip-confirmation")
 			deferConstraints := cCtx.Bool("defer-constraints")
 			groups := cCtx.StringSlice("group")
 			tables := cCtx.StringSlice("table")
+			excluded := cCtx.StringSlice("exclude")
 			configID := cCtx.String("config")
 
 			var err error

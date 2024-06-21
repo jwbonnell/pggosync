@@ -38,14 +38,12 @@ func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task,
 		tasks = append(tasks, newTask)
 	}
 
-	return tasks, nil
-}
-
-/*func (tr *TaskResolver) TableExists(ctx context.Context, tableName string) (bool, error) {
-	for range r.Tables {
+	if len(groupArgs) == 0 && len(tableArgs) == 0 {
 
 	}
-}*/
+
+	return tasks, nil
+}
 
 func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 
