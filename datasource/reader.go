@@ -3,6 +3,7 @@ package datasource
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
@@ -31,11 +32,13 @@ func NewReadDataSource(Name string, Url string) (*ReaderDataSource, error) {
 		Name:  Name,
 		Debug: false,
 	}
-
-	err = datasource.StatusCheck(context.Background())
+	ctx := context.Background()
+	err = datasource.StatusCheck(ctx)
 	if err != nil {
 		return &ReaderDataSource{}, fmt.Errorf("db StatusCheck failed: %w", err)
 	}
+
+	datasource.GetTables(ctx)
 
 	return &datasource, nil
 }
@@ -55,7 +58,14 @@ func (r *ReaderDataSource) GetTables(ctx context.Context) ([]db.Table, error) {
 		return tables, fmt.Errorf("%s GetTables %w", r.Name, err)
 	}
 
+	r.Tables = tables
 	return tables, nil
+}
+
+func (r *ReaderDataSource) TableExists(ctx context.Context, name string) bool {
+	for _, table := range r.Tables {
+		table.Name
+	}
 }
 
 func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
@@ -138,4 +148,13 @@ func (r *ReaderDataSource) GetNonDeferrableConstraints(ctx context.Context) ([]d
 	}
 
 	return constraints, nil
+}
+
+func (r *ReaderDataSource) GetColumns(ctx context.Context, table string) {
+
+}
+
+func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
+	re := regexp.MustCompile(`postgres:\/\/.*:.*@(localhost|127\.0\.0\.1)`)
+	return re.MatchString(r.Url)
 }

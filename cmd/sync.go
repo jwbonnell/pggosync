@@ -49,6 +49,7 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 			initRequired(handler)
 			truncate := cCtx.Bool("truncate")
 			preserve := cCtx.Bool("preserve")
+			noSafety := cCtx.Bool("no-safety")
 			deferConstraints := cCtx.Bool("defer-constraints")
 			groups := cCtx.StringSlice("group")
 			tables := cCtx.StringSlice("table")
@@ -67,15 +68,19 @@ func syncCmd(handler *config.ConfigHandler) *cli.Command {
 				log.Fatalf("Error retrieving config: %v", err)
 			}
 
+			source, destination := setupDatasources(&c)
+			defer source.DB.Close(cCtx.Context)
+			defer destination.DB.Close(cCtx.Context)
+
+			if !noSafety && !destination.IsLocalHost(cCtx.Context) {
+				log.Fatalf("Destination host is not localhost or 127.0.0.1, pass --no-safety to override this")
+			}
+
 			resolver := sync.NewTaskResolver(&c, truncate, preserve, deferConstraints)
 			tasks, err := resolver.Resolve(groups, tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}
-
-			source, destination := setupDatasources(&c)
-			defer source.DB.Close(cCtx.Context)
-			defer destination.DB.Close(cCtx.Context)
 
 			if err = sync.Sync(cCtx.Context, deferConstraints, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)

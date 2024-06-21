@@ -30,18 +30,22 @@ func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task,
 		tasks = append(tasks, newTasks...)
 	}
 
-	/* TODO determine if individual table syncs will be supported and
-	 *
 	for i := range tableArgs {
-		newTasks, err := tr.tableToTasks(tableArgs[i])
+		newTask, err := tr.tableToTasks(tableArgs[i])
 		if err != nil {
 			return nil, err
 		}
-		tasks = append(tasks, newTasks...)
-	}*/
+		tasks = append(tasks, newTask)
+	}
 
 	return tasks, nil
 }
+
+/*func (tr *TaskResolver) TableExists(ctx context.Context, tableName string) (bool, error) {
+	for range r.Tables {
+
+	}
+}*/
 
 func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 
@@ -57,7 +61,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 
 	var tasks []Task
 	for tkey, filter := range group {
-		schema, table, _, err := opts.ParseTableArg(tkey)
+		schema, table, err := opts.ParseFullTableName(tkey)
 		if err != nil {
 			return nil, err
 		}
@@ -72,20 +76,18 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 			DeferConstraints: tr.deferConstraints,
 		})
 	}
-	return tasks, nil
+	return tasks, nil //--table users:"WHERE something" or
 }
 
-/*func (tr *TaskResolver) tableToTasks(tableArgs string) ([]Task, error) {
-	schema, table, params, err := opts.ParseTableArg(tableArgs)
+func (tr *TaskResolver) tableToTasks(tableArgs string) (Task, error) {
+	schema, table, filter, err := opts.ParseTableArg(tableArgs)
 	if err != nil {
-		return nil, err
+		return Task{}, err
 	}
 
-	filter = opts.ApplyParamToFilter(params, filter)
-
-	task := Task{
+	return Task{
 		Table:    db.Table{Schema: schema, Name: table},
 		Filter:   filter,
 		Truncate: true,
-	}
-}*/
+	}, nil
+}

@@ -31,15 +31,32 @@ func TestParseTableArg(t *testing.T) {
 	}{
 		{"city", "public|city|"},
 		{"public.city:234", "public|city|234"},
-		{"city:444", "public|city|444"},
+		{"city:WHERE test = 'asdf'", "public|city|WHERE test = 'asdf'"},
 		{"other.country", "other|country|"},
-		{"other.country:453", "other|country|453"},
-		{"other.country:453,677", "other|country|453,677"},
+		{"other.country:\"WHERE test = 'zxcv'\"", "other|country|WHERE test = 'zxcv'"},
 	}
 
 	for _, test := range tests {
-		schema, table, params, err := ParseTableArg(test.input)
+		schema, table, filter, err := ParseTableArg(test.input)
 		assert.NoError(t, err)
-		assert.Equal(t, test.expected, fmt.Sprintf("%s|%s|%s", schema, table, strings.Join(params, ",")))
+		assert.Equal(t, test.expected, fmt.Sprintf("%s|%s|%s", schema, table, filter))
+	}
+}
+
+func TestParseFullTableName(t *testing.T) {
+	var tests = []struct {
+		input    string
+		expected string
+	}{
+		{"city", "public|city"},
+		{"public.city", "public|city"},
+		{"city", "public|city"},
+		{"other.country", "other|country"},
+	}
+
+	for _, test := range tests {
+		schema, table, err := ParseFullTableName(test.input)
+		assert.NoError(t, err)
+		assert.Equal(t, test.expected, fmt.Sprintf("%s|%s", schema, table))
 	}
 }
