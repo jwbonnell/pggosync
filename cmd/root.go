@@ -10,7 +10,7 @@ import (
 )
 
 func Execute(args []string) {
-	handler := config.ConfigHandler{
+	handler := config.Handler{
 		PathHandler: config.OSPathHandler{},
 	}
 	app := &cli.App{
@@ -31,7 +31,7 @@ func Execute(args []string) {
 	}
 }
 
-func initRequired(handler *config.ConfigHandler) {
+func initRequired(handler *config.Handler) {
 	forceInit := false
 	_, err := handler.GetDefault()
 	if err != nil {

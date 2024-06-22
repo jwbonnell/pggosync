@@ -5,7 +5,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func initCmd(handler *config.ConfigHandler) *cli.Command {
+func initCmd(handler *config.Handler) *cli.Command {
 	cmd := cli.Command{
 		Name:    "init",
 		Aliases: []string{"i"},

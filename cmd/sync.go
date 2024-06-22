@@ -11,7 +11,7 @@ import (
 	"os"
 )
 
-func syncCmd(handler *config.ConfigHandler) *cli.Command {
+func syncCmd(handler *config.Handler) *cli.Command {
 	cmd := cli.Command{
 		Name:  "sync",
 		Usage: "Sync one or more groups",

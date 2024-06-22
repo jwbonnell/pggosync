@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func listCmd(handler *config.ConfigHandler) *cli.Command {
+func listCmd(handler *config.Handler) *cli.Command {
 	cmd := cli.Command{
 		Name:    "list",
 		Aliases: []string{"l"},

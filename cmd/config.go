@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func configCmd(handler *config.ConfigHandler) *cli.Command {
+func configCmd(handler *config.Handler) *cli.Command {
 
 	cmd := cli.Command{
 		Name:    "config",
