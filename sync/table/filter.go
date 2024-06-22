@@ -17,7 +17,7 @@ func FilterTables(tables []db.Table, excluded []db.Table) []db.Table {
 	return out
 }
 
-func GetSharedTables(source datasource.ReaderDataSource, destination datasource.ReadWriteDatasource, excluded []db.Table) ([]db.Table, error) {
+func GetSharedTables(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, excluded []db.Table) []db.Table {
 	sourceTables := FilterTables(source.Tables, excluded)
 	destinationTables := FilterTables(destination.Tables, excluded)
 
@@ -29,5 +29,5 @@ func GetSharedTables(source datasource.ReaderDataSource, destination datasource.
 			}
 		}
 	}
-	return sharedTables, nil
+	return sharedTables
 }

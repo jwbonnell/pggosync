@@ -110,7 +110,7 @@ func syncCmd(handler *config.Handler) *cli.Command {
 				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
 			}
 
-			resolver := sync.NewTaskResolver(&c, truncate, preserve, deferConstraints, excludedTables)
+			resolver := sync.NewTaskResolver(source, destination, truncate, preserve, deferConstraints, excludedTables)
 			tasks, err := resolver.Resolve(groups, tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)

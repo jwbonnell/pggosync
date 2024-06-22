@@ -3,22 +3,30 @@ package sync
 import (
 	"errors"
 	"fmt"
-	"github.com/jwbonnell/pggosync/config"
+	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/opts"
 	"github.com/jwbonnell/pggosync/sync/table"
 )
 
 type TaskResolver struct {
-	Config           *config.Config
+	source           *datasource.ReaderDataSource
+	destination      *datasource.ReadWriteDatasource
+	groups           map[string]map[string]string
 	truncate         bool
 	preserve         bool
 	deferConstraints bool
 	excluded         []db.Table
 }
 
-func NewTaskResolver(cfg *config.Config, truncate bool, preserve bool, deferConstraints bool, excluded []db.Table) *TaskResolver {
-	return &TaskResolver{Config: cfg, truncate: truncate, preserve: preserve, deferConstraints: deferConstraints, excluded: excluded}
+func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, truncate bool, preserve bool, deferConstraints bool, excluded []db.Table) *TaskResolver {
+	return &TaskResolver{
+		source:           source,
+		destination:      destination,
+		truncate:         truncate,
+		preserve:         preserve,
+		deferConstraints: deferConstraints,
+		excluded:         excluded}
 }
 
 func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task, error) {
@@ -41,10 +49,16 @@ func (tr *TaskResolver) Resolve(groupArgs []string, tableArgs []string) ([]Task,
 	}
 
 	if len(groupArgs) == 0 && len(tableArgs) == 0 {
-
+		//No groups or tables passed in, assume all tables are desired.
+		sharedTables := table.GetSharedTables(tr.source, tr.destination, tr.excluded)
+		for _, t := range sharedTables {
+			tasks = append(tasks, Task{
+				Table:    t,
+				Filter:   "",
+				Truncate: tr.truncate,
+			})
+		}
 	}
-
-	table.GetSharedTables()
 
 	return tasks, nil
 }
@@ -55,7 +69,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 		return nil, fmt.Errorf("TaskResolver.groupToTasks %w", err)
 	}
 
-	group, ok := tr.Config.Groups[groupID]
+	group, ok := tr.groups[groupID]
 	if !ok {
 		return nil, errors.New("No such group " + groupID)
 	}
