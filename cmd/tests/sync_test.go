@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+type Country struct {
+	CountryID int    `db:"country_id"`
+	Name      string `db:"country_name"`
+}
+
+type City struct {
+	CityID    int    `db:"city_id"`
+	Name      string `db:"city_name"`
+	CountryID int    `db:"country_id"`
+}
+
 func TestTruncate(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
