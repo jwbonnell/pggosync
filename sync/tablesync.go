@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
@@ -23,26 +25,41 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 
 func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 
+	//primaryKey := task.DestPK
+	sharedColumns := task.GetSharedColumnNames()
+	scrubbedColumns := sharedColumns[:] ///TODO implement scrubbing
+
 	if !task.Truncate || task.Preserve {
 		//TODO PK CHECK
-		ttName := db.GenTempTableName(0)
+		ttName := db.GenTempTableName(0, task.Table.Name)
 		err := t.destination.CreateTempTable(ctx, ttName, task.Table.FullName())
 		if err != nil {
 			return fmt.Errorf("datasource.CreateTempTable: %w", err)
 		}
 
-		err = t.copy(ctx, task.Table.FullName(), ttName, "")
+		t.destination.GetTempTableRowCount(ctx, ttName)
+		err = t.copy(ctx, task.Table.FullName(), ttName, task.Filter, scrubbedColumns, sharedColumns)
 		if err != nil {
 			return fmt.Errorf("TableSync.copy temp table %s: %w", ttName, err)
 		}
+		t.destination.GetTempTableRowCount(ctx, ttName)
 
-		action := ""
-		onConflict := "NOTHING"
+		destPKs := task.GetDestPKs()
+		action := "NOTHING"
 		if !task.Preserve {
-			onConflict = ""
+			var onConflictAction []string
+			for i := range sharedColumns {
+				if !slices.Contains(destPKs, sharedColumns[i]) {
+					onConflictAction = append(onConflictAction, sharedColumns[i])
+				}
+			}
+
+			if len(onConflictAction) > 0 {
+				action = fmt.Sprintf("UPDATE SET %s", strings.Join(onConflictAction, ","))
+			}
 		}
 
-		err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), []string{}, onConflict, action)
+		err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action)
 		if err != nil {
 			return fmt.Errorf("TableSync.InsertFromTempTable %w", err)
 		}
@@ -60,7 +77,7 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 			}
 		}
 
-		err := t.copy(ctx, task.Table.FullName(), task.Table.FullName(), task.Filter)
+		err := t.copy(ctx, task.Table.FullName(), task.Table.FullName(), task.Filter, scrubbedColumns, sharedColumns)
 		if err != nil {
 			return fmt.Errorf("TableSync.copy %w", err)
 		}
@@ -69,19 +86,26 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 	return nil
 }
 
-func (t *TableSync) copy(ctx context.Context, sourceTable string, destTable string, filter string) error {
+func (t *TableSync) copy(ctx context.Context, sourceTable string, destTable string, sourceFilter string, sourceFields []string, destFields []string) error {
 	var buf bytes.Buffer
 	sconn := t.source.DB.PgConn()
-	_, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT * FROM %s %s ) TO STDOUT", sourceTable, filter))
+	tag, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT %s FROM %s %s ) TO STDOUT", strings.Join(sourceFields, ","), sourceTable, sourceFilter))
 	if err != nil {
 		return err
 	}
+	fmt.Println("COPY TO", tag)
 
 	dconn := t.destination.DB.PgConn()
-	_, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s FROM STDIN", destTable))
+	tag, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", destTable, strings.Join(destFields, ",")))
 	if err != nil {
 		return err
 	}
 
+	fmt.Println("COPY FROM", tag)
+
 	return nil
+}
+
+func (t *TableSync) getOnConflictAction() {
+
 }

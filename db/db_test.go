@@ -20,8 +20,8 @@ func TestBuildUrl(t *testing.T) {
 
 func TestGenTempTableName(t *testing.T) {
 	seed := 123456789
-	expected := "pggosync_77885"
-	assert.Equal(t, expected, GenTempTableName(int64(seed)), "the generated temp table name should match expected")
+	expected := "pggosync_users_77885"
+	assert.Equal(t, expected, GenTempTableName(int64(seed), "users"), "the generated temp table name should match expected")
 }
 
 func TestTableStruct_FullName(t *testing.T) {
@@ -45,18 +45,4 @@ func TestTableStruct_Equal(t *testing.T) {
 	t2 := Table{Schema: "lana", Name: "kane"}
 
 	assert.True(t, t1.Equal(t2), "the tables should be equal")
-}
-
-func TestSequenceStruct_NotEqual(t *testing.T) {
-	s1 := Sequence{Schema: "cyril", Name: "figgis", Column: "column1"}
-	s2 := Sequence{Schema: "malory", Name: "archer", Column: "column1"}
-
-	assert.False(t, s1.Equal(s2), "the sequences should not be equal")
-}
-
-func TestSequenceStruct_Equal(t *testing.T) {
-	s1 := Sequence{Schema: "cyril", Name: "figgis", Column: "column1"}
-	s2 := Sequence{Schema: "cyril", Name: "figgis", Column: "column1"}
-
-	assert.True(t, s1.Equal(s2), "the sequences should be equal")
 }

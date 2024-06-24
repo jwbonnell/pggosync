@@ -34,6 +34,7 @@ func TestTruncate(t *testing.T) {
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
 	args = append(args, "--truncate")
+	args = append(args, "--skip-confirmation")
 	cmd.Execute(args)
 
 	var country []Country
@@ -59,6 +60,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	args = append(args, "country_var_1:1000")
 	args = append(args, "--truncate")
 	args = append(args, "--defer-constraints")
+	args = append(args, "--skip-confirmation")
 	cmd.Execute(args)
 
 	var country []Country
@@ -82,6 +84,7 @@ func TestSync(t *testing.T) {
 	args = append(args, "sync")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1001")
+	args = append(args, "--skip-confirmation")
 	cmd.Execute(args)
 
 	var country []Country

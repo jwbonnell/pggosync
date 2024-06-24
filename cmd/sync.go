@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"log"
 	"os"
+	"strings"
 )
 
 func syncCmd(handler *config.Handler) *cli.Command {
@@ -16,11 +17,6 @@ func syncCmd(handler *config.Handler) *cli.Command {
 		Name:  "sync",
 		Usage: "Sync one or more groups",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "force",
-				Aliases: []string{"f"},
-				Usage:   "Force sync",
-			},
 			&cli.BoolFlag{
 				Name:  "truncate",
 				Usage: "Truncate tables",
@@ -94,11 +90,12 @@ func syncCmd(handler *config.Handler) *cli.Command {
 					log.Fatalf("Error reading input: %v", err)
 				}
 
-				switch response {
+				switch strings.TrimSpace(response) {
 				case "yes":
 					fmt.Println("Starting sync")
 				case "no":
 					fmt.Println("Sync cancelled")
+					os.Exit(0)
 				default:
 					log.Fatalln("Invalid input, aborting...")
 				}
@@ -110,8 +107,8 @@ func syncCmd(handler *config.Handler) *cli.Command {
 				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
 			}
 
-			resolver := sync.NewTaskResolver(source, destination, truncate, preserve, deferConstraints, excludedTables)
-			tasks, err := resolver.Resolve(groups, tables)
+			resolver := sync.NewTaskResolver(source, destination, c.Groups, truncate, preserve, deferConstraints, excludedTables)
+			tasks, err := resolver.Resolve(cCtx.Context, groups, tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}

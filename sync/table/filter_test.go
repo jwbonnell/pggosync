@@ -40,4 +40,6 @@ func TestFilterTables(t *testing.T) {
 	assert.Len(t, filtered, 3)
 	assert.Len(t, tables, 4)
 	assert.Len(t, excludedTables, 1)
+	assert.Equal(t, "public.users", filtered[0].FullName())
+	assert.Equal(t, "auth.requests", filtered[2].FullName())
 }
