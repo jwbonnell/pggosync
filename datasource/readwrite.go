@@ -28,9 +28,15 @@ func NewReadWriteDataSource(Name string, Url string) (*ReadWriteDatasource, erro
 		},
 	}
 
-	err = datasource.StatusCheck(context.Background())
+	ctx := context.Background()
+	err = datasource.StatusCheck(ctx)
 	if err != nil {
 		return &ReadWriteDatasource{}, fmt.Errorf("db StatusCheck failed: %w", err)
+	}
+
+	_, err = datasource.GetTables(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	return &datasource, nil
@@ -60,7 +66,27 @@ func (rw *ReadWriteDatasource) CreateTempTable(ctx context.Context, name string,
 		return err
 	}
 
+	var cnt int
+	err = rw.DB.QueryRow(ctx, "select count(*) FROM pg_namespace where oid  =  pg_my_temp_schema()").Scan(&cnt)
+	if err != nil {
+		return err
+	}
+
+	if cnt == 0 {
+		return fmt.Errorf("no temp table found - Source:%s TTName:%s\n", sourceTable, name)
+	}
+
 	return nil
+}
+
+func (rw *ReadWriteDatasource) GetTempTableRowCount(ctx context.Context, table string) (int64, error) {
+	var count int64
+	err := rw.DB.QueryRow(ctx, fmt.Sprintf("SELECT count(*) FROM %s", table)).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 
 func (rw *ReadWriteDatasource) SetSequence(ctx context.Context, sequence string, value int) error {
@@ -72,15 +98,11 @@ func (rw *ReadWriteDatasource) SetSequence(ctx context.Context, sequence string,
 	return nil
 }
 
-func (rw *ReadWriteDatasource) InsertFromTempTable(ctx context.Context, tempTable string, destTable string, fieldSlice []string, onConflict string, action string) error {
-	fields := strings.Join(fieldSlice[:], ",")
-	_, err := rw.DB.Exec(ctx, `
-		INSERT INTO %s %s (SELECT %s FROM %s)
-				ON CONFLICT %s DO %s
-	`, destTable, fields, fields, tempTable, onConflict, action)
+func (rw *ReadWriteDatasource) InsertFromTempTable(ctx context.Context, tempTable string, destTable string, sourceFields []string, destFields []string, onConflict string, action string) error {
+	sql := fmt.Sprintf("INSERT INTO %s (%s) (SELECT %s FROM %s) ON CONFLICT (%s) DO %s", destTable, strings.Join(sourceFields, ","), strings.Join(destFields, ","), tempTable, onConflict, action)
+	_, err := rw.DB.Exec(ctx, sql)
 	if err != nil {
 		return err
 	}
-
 	return nil
 }

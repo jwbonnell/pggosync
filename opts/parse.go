@@ -11,36 +11,36 @@ func ParseGroupArg(arg string) (string, []string, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("opts.ParseGroupArg: %w", err)
 	}
-	return groupID, params, nil
+	return groupID, strings.Split(params, ","), nil
 }
 
-func ParseTableArg(arg string) (string, string, []string, error) {
-	fullTableName, params, err := parsePrimaryArg(arg)
+func ParseTableArg(arg string) (string, string, string, error) {
+	fullTableName, filter, err := parsePrimaryArg(arg)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("opts.ParseTableArg: %w", err)
+		return "", "", "", fmt.Errorf("opts.ParseTableArg: %w", err)
 	}
 
-	schema, table, err := parseFullTableName(fullTableName)
+	schema, table, err := ParseFullTableName(fullTableName)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("opts.ParseTableArg: %w", err)
+		return "", "", "", fmt.Errorf("opts.ParseTableArg: %w", err)
 	}
 
-	return schema, table, params, nil
+	return schema, table, strings.Trim(filter, "\""), nil
 }
 
-func parsePrimaryArg(arg string) (string, []string, error) {
+func parsePrimaryArg(arg string) (string, string, error) {
 	parts := strings.Split(arg, ":")
 	switch {
 	case len(parts) < 1 || len(parts) > 2 || parts[0] == "":
-		return "", []string{}, errors.New("invalid argument")
+		return "", "", errors.New("invalid argument")
 	case len(parts) == 1:
-		return parts[0], []string{}, nil
+		return parts[0], "", nil
 	default:
-		return parts[0], strings.Split(parts[1], ","), nil
+		return parts[0], parts[1], nil
 	}
 }
 
-func parseFullTableName(name string) (string, string, error) {
+func ParseFullTableName(name string) (string, string, error) {
 	var schema, table string
 	parts := strings.Split(name, ".")
 	switch len(parts) {

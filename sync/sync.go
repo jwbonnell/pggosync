@@ -11,7 +11,7 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
+func Sync(ctx context.Context, deferConstraints bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
 	maxConcurrency := 1 // Allowed to run at the same time
 
 	// Create a buffered channel with a capacity of maxConcurrency
@@ -33,16 +33,19 @@ func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource
 		}
 	}()
 
-	ndc, err := dest.GetNonDeferrableConstraints(ctx)
-	if err != nil {
-		return err
-	}
+	var ndc []db.NonDeferrableConstraints
+	if deferConstraints {
+		ndc, err = dest.GetNonDeferrableConstraints(ctx)
+		if err != nil {
+			return err
+		}
 
-	fmt.Println("Defer Contraints")
-	err = db.DeferConstraints(ctx, tx.Conn(), ndc)
-	if err != nil {
-		fmt.Println("DeferContraints Error: ", err)
-		return err
+		fmt.Println("Defer Contraints")
+		err = db.DeferConstraints(ctx, tx.Conn(), ndc)
+		if err != nil {
+			fmt.Println("DeferContraints Error: ", err)
+			return err
+		}
 	}
 
 	wg.Add(len(tasks))
@@ -53,6 +56,7 @@ func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource
 				ts := NewTableSync(source, dest)
 				err = ts.Sync(ctx, &task)
 				if err != nil {
+					//TODO Update goroutines to handle error appropriately using select or something
 					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), err)
 				}
 
@@ -71,11 +75,13 @@ func Sync(ctx context.Context, tasks []Task, source *datasource.ReaderDataSource
 	wg.Wait()
 	close(taskQueue)
 
-	fmt.Println("Restore Contraints")
-	err = db.RestoreContraints(ctx, tx.Conn(), ndc)
-	if err != nil {
-		fmt.Println("RestoreContraints Error: ", err)
-		return err
+	if deferConstraints {
+		fmt.Println("Restore Contraints")
+		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
+		if err != nil {
+			fmt.Println("RestoreContraints Error: ", err)
+			return err
+		}
 	}
 
 	fmt.Println("All tasks have completed")

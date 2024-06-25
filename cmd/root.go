@@ -9,8 +9,8 @@ import (
 	"os"
 )
 
-func Execute() {
-	handler := config.ConfigHandler{
+func Execute(args []string) {
+	handler := config.Handler{
 		PathHandler: config.OSPathHandler{},
 	}
 	app := &cli.App{
@@ -26,12 +26,12 @@ func Execute() {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(args); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func initRequired(handler *config.ConfigHandler) {
+func initRequired(handler *config.Handler) {
 	forceInit := false
 	_, err := handler.GetDefault()
 	if err != nil {

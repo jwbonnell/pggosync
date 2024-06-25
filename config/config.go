@@ -46,17 +46,17 @@ func (ph OSPathHandler) UserConfigDir() (string, error) {
 	return os.UserConfigDir()
 }
 
-type ConfigHandler struct {
+type Handler struct {
 	PathHandler PathHandler
 }
 
-func NewConfigHandler(path PathHandler) *ConfigHandler {
-	return &ConfigHandler{
+func NewConfigHandler(path PathHandler) *Handler {
+	return &Handler{
 		PathHandler: path,
 	}
 }
 
-func (c *ConfigHandler) InitConfig(name string) error {
+func (c *Handler) InitConfig(name string) error {
 	if err := c.SetDefault(name); err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func (c *ConfigHandler) InitConfig(name string) error {
 	return nil
 }
 
-func (c *ConfigHandler) saveConfig(name string, configYaml string) error {
+func (c *Handler) saveConfig(name string, configYaml string) error {
 	dir, err := c.PathHandler.UserConfigDir()
 	configPath := filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))
 
@@ -81,7 +81,7 @@ func (c *ConfigHandler) saveConfig(name string, configYaml string) error {
 	return nil
 }
 
-func (c *ConfigHandler) GetCurrentConfig() (Config, error) {
+func (c *Handler) GetCurrentConfig() (Config, error) {
 	def, err := c.GetDefault()
 	if err != nil {
 		return Config{}, err
@@ -90,7 +90,7 @@ func (c *ConfigHandler) GetCurrentConfig() (Config, error) {
 	return c.GetConfig(def)
 }
 
-func (c *ConfigHandler) GetConfig(name string) (Config, error) {
+func (c *Handler) GetConfig(name string) (Config, error) {
 	dir, err := c.PathHandler.UserConfigDir()
 	if err != nil {
 		return Config{}, err
@@ -116,7 +116,7 @@ func (c *ConfigHandler) GetConfig(name string) (Config, error) {
 	return config, nil
 }
 
-func (c *ConfigHandler) GetDefault() (string, error) {
+func (c *Handler) GetDefault() (string, error) {
 	var def string
 	dir, err := c.PathHandler.UserConfigDir()
 	if err != nil {
@@ -133,7 +133,7 @@ func (c *ConfigHandler) GetDefault() (string, error) {
 	return def, nil
 }
 
-func (c *ConfigHandler) SetDefault(def string) error {
+func (c *Handler) SetDefault(def string) error {
 	dir, err := c.PathHandler.UserConfigDir()
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func (c *ConfigHandler) SetDefault(def string) error {
 	return nil
 }
 
-func (c *ConfigHandler) ListConfigs() ([]string, error) {
+func (c *Handler) ListConfigs() ([]string, error) {
 	dir, err := c.PathHandler.UserConfigDir()
 	if err != nil {
 		return nil, err

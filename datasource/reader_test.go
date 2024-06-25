@@ -12,6 +12,9 @@ import (
 )
 
 func TestGetTables(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
@@ -25,6 +28,9 @@ func TestGetTables(t *testing.T) {
 }
 
 func TestGetSchemas(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
@@ -46,6 +52,9 @@ func TestGetSchemas(t *testing.T) {
 }
 
 func TestGetTriggers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	table := "dummy"
 
@@ -61,6 +70,9 @@ func TestGetTriggers(t *testing.T) {
 }
 
 func TestStatusCheck(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
@@ -73,8 +85,10 @@ func TestStatusCheck(t *testing.T) {
 }
 
 func TestGetNonDeferrableConstraints(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
-
 	rd, err := getReadDataSource()
 	assert.Nil(t, err)
 
