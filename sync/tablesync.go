@@ -30,19 +30,20 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 	scrubbedColumns := sharedColumns[:] ///TODO implement scrubbing
 
 	if !task.Truncate || task.Preserve {
-		//TODO PK CHECK
+		if len(task.DestPK) == 0 {
+			return fmt.Errorf("no primary key found for table %s", task.Table.FullName())
+		}
+
 		ttName := db.GenTempTableName(0, task.Table.Name)
 		err := t.destination.CreateTempTable(ctx, ttName, task.Table.FullName())
 		if err != nil {
 			return fmt.Errorf("datasource.CreateTempTable: %w", err)
 		}
 
-		t.destination.GetTempTableRowCount(ctx, ttName)
 		err = t.copy(ctx, task.Table.FullName(), ttName, task.Filter, scrubbedColumns, sharedColumns)
 		if err != nil {
 			return fmt.Errorf("TableSync.copy temp table %s: %w", ttName, err)
 		}
-		t.destination.GetTempTableRowCount(ctx, ttName)
 
 		destPKs := task.GetDestPKs()
 		action := "NOTHING"
@@ -50,7 +51,7 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 			var onConflictAction []string
 			for i := range sharedColumns {
 				if !slices.Contains(destPKs, sharedColumns[i]) {
-					onConflictAction = append(onConflictAction, sharedColumns[i])
+					onConflictAction = append(onConflictAction, fmt.Sprintf("%s = EXCLUDED.%s", sharedColumns[i], sharedColumns[i]))
 				}
 			}
 
@@ -89,23 +90,16 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) error {
 func (t *TableSync) copy(ctx context.Context, sourceTable string, destTable string, sourceFilter string, sourceFields []string, destFields []string) error {
 	var buf bytes.Buffer
 	sconn := t.source.DB.PgConn()
-	tag, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT %s FROM %s %s ) TO STDOUT", strings.Join(sourceFields, ","), sourceTable, sourceFilter))
+	cttag, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT %s FROM %s %s ) TO STDOUT", strings.Join(sourceFields, ","), sourceTable, sourceFilter))
 	if err != nil {
-		return err
+		return fmt.Errorf("CopyTo - tag:%s  err:%w", cttag, err)
 	}
-	fmt.Println("COPY TO", tag)
 
 	dconn := t.destination.DB.PgConn()
-	tag, err = dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", destTable, strings.Join(destFields, ",")))
+	cftag, err := dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", destTable, strings.Join(destFields, ",")))
 	if err != nil {
-		return err
+		return fmt.Errorf("CopyFrom - tag:%s err:%w cttag:%s", cftag, err, cttag)
 	}
 
-	fmt.Println("COPY FROM", tag)
-
 	return nil
-}
-
-func (t *TableSync) getOnConflictAction() {
-
 }

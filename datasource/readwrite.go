@@ -61,12 +61,12 @@ func (rw *ReadWriteDatasource) DeleteAll(ctx context.Context, table string) erro
 }
 
 func (rw *ReadWriteDatasource) CreateTempTable(ctx context.Context, name string, sourceTable string) error {
-	_, err := rw.DB.Exec(ctx, fmt.Sprintf("CREATE TABLE %s AS TABLE %s WITH NO DATA", name, sourceTable))
+	_, err := rw.DB.Exec(ctx, fmt.Sprintf("CREATE TEMPORARY TABLE %s AS TABLE %s WITH NO DATA", name, sourceTable))
 	if err != nil {
 		return err
 	}
 
-	/*var cnt int
+	var cnt int
 	err = rw.DB.QueryRow(ctx, "select count(*) FROM pg_namespace where oid  =  pg_my_temp_schema()").Scan(&cnt)
 	if err != nil {
 		return err
@@ -74,19 +74,17 @@ func (rw *ReadWriteDatasource) CreateTempTable(ctx context.Context, name string,
 
 	if cnt == 0 {
 		return fmt.Errorf("no temp table found - Source:%s TTName:%s\n")
-	}*/
+	}
 
 	return nil
 }
 
 func (rw *ReadWriteDatasource) GetTempTableRowCount(ctx context.Context, table string) (int64, error) {
 	var count int64
-	r, err := rw.DB.Query(ctx, fmt.Sprintf("SELECT count(*) FROM %s", table))
+	err := rw.DB.QueryRow(ctx, fmt.Sprintf("SELECT count(*) FROM %s", table)).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
-
-	err = r.Scan(&count)
 
 	return count, nil
 }
