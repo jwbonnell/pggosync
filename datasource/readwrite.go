@@ -73,7 +73,7 @@ func (rw *ReadWriteDatasource) CreateTempTable(ctx context.Context, name string,
 	}
 
 	if cnt == 0 {
-		return fmt.Errorf("no temp table found - Source:%s TTName:%s\n")
+		return fmt.Errorf("no temp table found - Source:%s TTName:%s\n", sourceTable, name)
 	}
 
 	return nil

@@ -24,8 +24,6 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 }
 
 func (t *TableSync) Sync(ctx context.Context, task *Task) error {
-
-	//primaryKey := task.DestPK
 	sharedColumns := task.GetSharedColumnNames()
 	scrubbedColumns := sharedColumns[:] ///TODO implement scrubbing
 
