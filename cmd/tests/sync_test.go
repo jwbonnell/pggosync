@@ -142,3 +142,34 @@ func TestSync_Table(t *testing.T) {
 	assert.Equal(t, 1, len(country))
 	assert.Equal(t, "Country 1002", country[0].Name)
 }
+
+func TestSync_TableMulti(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
+	ctx := context.Background()
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	assert.NoError(t, err)
+	defer db.Close(ctx)
+
+	args := os.Args[0:1]
+	args = append(args, "sync")
+	args = append(args, "--table")
+	args = append(args, "country")
+	args = append(args, "--table")
+	args = append(args, "city")
+	args = append(args, "--skip-confirmation")
+	cmd.Execute(args)
+
+	var country []Country
+	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 1002")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(country))
+	assert.Equal(t, "Country 1002", country[0].Name)
+
+	var city []City
+	err = pgxscan.Select(ctx, db, &city, "SELECT * FROM city WHERE country_id = 1002")
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, 1, len(country))
+	assert.Equal(t, "Country 1002", country[0].Name)
+}
