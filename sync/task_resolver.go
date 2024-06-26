@@ -153,7 +153,7 @@ func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Tas
 	}
 
 	t := db.Table{Schema: schema, Name: tableName}
-	if len(table.FilterTables([]db.Table{t}, excluded)) == 0 {
+	if len(excluded) > 0 && len(table.FilterTables([]db.Table{t}, excluded)) == 0 {
 		return Task{}, fmt.Errorf("supplied table %s is in the excluded list", tableArgs)
 	}
 
