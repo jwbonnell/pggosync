@@ -3,6 +3,7 @@ package datasource
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -12,16 +13,16 @@ type ReadWriteDatasource struct {
 	ReaderDataSource
 }
 
-func NewReadWriteDataSource(Name string, Url string) (*ReadWriteDatasource, error) {
+func NewReadWriteDataSource(Name string, u url.URL) (*ReadWriteDatasource, error) {
 	var datasource ReadWriteDatasource
-	db, err := pgx.Connect(context.Background(), Url)
+	db, err := pgx.Connect(context.Background(), u.String())
 	if err != nil {
 		return &ReadWriteDatasource{}, fmt.Errorf("unable to connect to database: %w", err)
 	}
 
 	datasource = ReadWriteDatasource{
 		ReaderDataSource: ReaderDataSource{
-			Url:   Url,
+			Url:   u.String(),
 			DB:    db,
 			Name:  Name,
 			Debug: false,

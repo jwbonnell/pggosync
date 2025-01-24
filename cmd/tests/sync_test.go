@@ -23,7 +23,7 @@ type City struct {
 
 func TestTruncate(t *testing.T) {
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
 	defer db.Close(ctx)
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7777, 'Country 7777') ON CONFLICT DO NOTHING")
@@ -31,6 +31,7 @@ func TestTruncate(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
 	args = append(args, "--truncate")
@@ -48,7 +49,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
 	defer db.Close(ctx)
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7777, 'Country 7777') ON CONFLICT DO NOTHING")
@@ -56,6 +57,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
 	args = append(args, "--truncate")
@@ -74,7 +76,7 @@ func TestSync(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
 	defer db.Close(ctx)
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (1001, 'Country 1001 - TEST') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
@@ -82,8 +84,8 @@ func TestSync(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
-	args = append(args, "--group")
-	args = append(args, "country_var_1:1001")
+	args = append(args, "--config", "../../_configs/default.yml")
+	args = append(args, "--group", "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
 	cmd.Execute(args)
 
@@ -99,7 +101,7 @@ func TestSync_Preserve(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
 	defer db.Close(ctx)
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (1001, 'Country 1001 - TEST') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
@@ -107,6 +109,7 @@ func TestSync_Preserve(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
@@ -125,12 +128,13 @@ func TestSync_Table(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
 	defer db.Close(ctx)
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country")
 	args = append(args, "--skip-confirmation")
@@ -148,12 +152,13 @@ func TestSync_TableMulti(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5438/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
 	defer db.Close(ctx)
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country")
 	args = append(args, "--table")

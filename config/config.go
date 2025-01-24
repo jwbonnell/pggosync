@@ -10,28 +10,40 @@ import (
 )
 
 const initialConfig string = `
-# Example: postgres://${USERNAME}:${PASSWORD}@${HOST}:${PORT}/${DATABASE}
-source: postgres://source_user:source_pw@localhost:5437/postgres
-destination: postgres://dest_user:dest_pw@localhost:5438/postgres
+source:
+	host: localhost
+	port: 5432
+	database: postgres
+	user: source_user
+	password: source_pw
 
-exclude:
-  - products
-
-groups:
-  country:
-    city: "where country_id = 10"
-    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
-    country: "where country_id = 10"
-
-  country_var_1:
-    city: "where country_id = {1}"
-    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = {1})"
-    country: "where country_id = {1}"
+destination:
+	host: localhost
+	port: 5433
+	database: postgres
+	user: dest_user
+	password: dest_pw
 `
 
 type Config struct {
-	Source      string                       `yaml:"source"`
-	Destination string                       `yaml:"destination"`
+	Source struct {
+		Host     string `yaml:"host"`
+		Port     string `yaml:"port"`
+		Database string `yaml:"database"`
+		User     string `yaml:"user"`
+		Password string `yaml:"password"`
+	} `yaml:"source"`
+	Destination struct {
+		Host     string `yaml:"host"`
+		Port     string `yaml:"port"`
+		Database string `yaml:"database"`
+		User     string `yaml:"user"`
+		Password string `yaml:"password"`
+	} `yaml:"destination"`
+}
+
+type SyncConfig struct {
+	Description string                       `yaml:"description"`
 	Exclude     []string                     `yaml:"exclude"`
 	Groups      map[string]map[string]string `yaml:"groups"`
 }
@@ -114,6 +126,25 @@ func (c *Handler) GetConfig(name string) (Config, error) {
 	}
 
 	return config, nil
+}
+
+func (c *Handler) GetSyncConfig(syncConfigPath string) (SyncConfig, error) {
+	var (
+		syncConfig SyncConfig
+		raw        []byte
+	)
+
+	raw, err := os.ReadFile(syncConfigPath)
+	if err != nil {
+		//Found a config file but could not read it
+		log.Fatal(err)
+	}
+
+	if err = yaml.Unmarshal(raw, &syncConfig); err != nil {
+		log.Fatalf("config.GetConfig: %v", err)
+	}
+
+	return syncConfig, nil
 }
 
 func (c *Handler) GetDefault() (string, error) {

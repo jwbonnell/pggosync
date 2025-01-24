@@ -6,7 +6,7 @@ services:
     image: postgres:15-bullseye
     restart: always
     ports:
-      - '5437:5432'
+      - '5432:5432'
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: source_user
@@ -22,7 +22,7 @@ services:
     image: postgres:15-bullseye
     restart: always
     ports:
-      - '5438:5432'
+      - '5433:5432'
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: dest_user

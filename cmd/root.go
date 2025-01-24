@@ -6,6 +6,7 @@ import (
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/urfave/cli/v2"
 	"log"
+	"net/url"
 	"os"
 )
 
@@ -45,7 +46,12 @@ func initRequired(handler *config.Handler) {
 }
 
 func setupDatasources(c *config.Config) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
-	destination, err := datasource.NewReadWriteDataSource("destination", c.Destination)
+	destination, err := datasource.NewReadWriteDataSource("destination", url.URL{
+		Scheme: "postgres",
+		Host:   fmt.Sprintf("%s:%s", c.Destination.Host, c.Destination.Port),
+		User:   url.UserPassword(c.Destination.User, c.Destination.Password),
+		Path:   c.Destination.Database,
+	})
 	if err != nil {
 		_, err := fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		if err != nil {
@@ -54,7 +60,12 @@ func setupDatasources(c *config.Config) (*datasource.ReaderDataSource, *datasour
 		os.Exit(1)
 	}
 
-	source, err := datasource.NewReadDataSource("source", c.Source)
+	source, err := datasource.NewReadDataSource("source", url.URL{
+		Scheme: "postgres",
+		Host:   fmt.Sprintf("%s:%s", c.Source.Host, c.Source.Port),
+		User:   url.UserPassword(c.Source.User, c.Source.Password),
+		Path:   c.Source.Database,
+	})
 	if err != nil {
 		_, err := fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		if err != nil {

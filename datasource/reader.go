@@ -3,6 +3,7 @@ package datasource
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 	"time"
 
@@ -29,16 +30,16 @@ type ReaderDataSource struct {
 	Debug  bool
 }
 
-func NewReadDataSource(Name string, Url string) (*ReaderDataSource, error) {
+func NewReadDataSource(Name string, u url.URL) (*ReaderDataSource, error) {
 	var datasource ReaderDataSource
-	db, err := pgx.Connect(context.Background(), Url)
+	conn, err := pgx.Connect(context.Background(), u.String())
 	if err != nil {
 		return &ReaderDataSource{}, fmt.Errorf("unable to connect to database: %w", err)
 	}
 
 	datasource = ReaderDataSource{
-		Url:   Url,
-		DB:    db,
+		Url:   u.String(),
+		DB:    conn,
 		Name:  Name,
 		Debug: false,
 	}

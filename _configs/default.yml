@@ -1,3 +1,4 @@
+description: This is the default sync configuration for regression testing this project
 
 exclude:
   - products
@@ -12,8 +13,9 @@ groups:
     city: "where country_id = {1}"
     store: "where city_id IN (SELECT city_id FROM city WHERE country_id = {1})"
     country: "where country_id = {1}"
-    
+
   country_preserve:
     city: "where country_id = 10"
     store: "where city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
     country: "where country_id = 10"
+    

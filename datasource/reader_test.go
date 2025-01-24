@@ -5,9 +5,9 @@ package datasource
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
-	"github.com/jwbonnell/pggosync/db"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -100,37 +100,23 @@ func TestGetNonDeferrableConstraints(t *testing.T) {
 }
 
 func getReadDataSource() (*ReaderDataSource, error) {
-	s := struct {
-		Host     string
-		Port     int
-		UserName string
-		Password string
-		Database string
-	}{
-		Host:     "localhost",
-		Port:     5437,
-		UserName: "source_user",
-		Password: "source_pw",
-		Database: "postgres",
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   "localhost:5432",
+		User:   url.UserPassword("source_user", "source_pw"),
+		Path:   "postgres",
 	}
 
-	return NewReadDataSource("reader", db.BuildUrl(s.Host, s.Port, s.UserName, s.Password, s.Database))
+	return NewReadDataSource("reader", u)
 }
 
 func getReadWriterDataSource() (*ReadWriteDatasource, error) {
-	d := struct {
-		Host     string
-		Port     int
-		UserName string
-		Password string
-		Database string
-	}{
-		Host:     "localhost",
-		Port:     5438,
-		UserName: "dest_user",
-		Password: "dest_pw",
-		Database: "postgres",
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   "localhost:5433",
+		User:   url.UserPassword("dest_user", "dest_pw"),
+		Path:   "postgres",
 	}
 
-	return NewReadWriteDataSource("readwrite", db.BuildUrl(d.Host, d.Port, d.UserName, d.Password, d.Database))
+	return NewReadWriteDataSource("readwrite", u)
 }

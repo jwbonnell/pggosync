@@ -4,5 +4,3 @@ A tool for syncing data between Postgres databases. This tool is inspired by the
 That said, I would **NOT** recommend this for any production uses. Use at your own risk.
 
 ### Usage
-
-TODO 

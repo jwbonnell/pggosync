@@ -48,9 +48,10 @@ func syncCmd(handler *config.Handler) *cli.Command {
 				Usage:   "Disable triggers on destination database",
 			},
 			&cli.StringFlag{
-				Name:    "config",
-				Aliases: []string{"c"},
-				Usage:   "Flag to specify the path to the sync config file.",
+				Name:     "config",
+				Aliases:  []string{"c"},
+				Required: true,
+				Usage:    "Flag to specify the path to the sync config file.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "group",
@@ -76,27 +77,33 @@ func syncCmd(handler *config.Handler) *cli.Command {
 			skipConfirmation := cCtx.Bool("skip-confirmation")
 			deferConstraints := cCtx.Bool("defer-constraints")
 			disableTriggers := cCtx.Bool("disable-triggers")
-			configID := cCtx.String("config")
+			syncConfigPath := cCtx.String("config")
 			groups := cCtx.StringSlice("group")
 			tables := cCtx.StringSlice("table")
 			excluded := cCtx.StringSlice("exclude")
 
 			var err error
-			var c config.Config
-			switch {
-			case configID != "":
-				c, err = handler.GetConfig(configID)
-			default:
-				c, err = handler.GetCurrentConfig()
+			c, err := handler.GetCurrentConfig()
+			if err != nil {
+				log.Fatalf("Error retrieving DB connection config: %v", err)
 			}
 
+			sc, err := handler.GetSyncConfig(syncConfigPath)
 			if err != nil {
-				log.Fatalf("Error retrieving config: %v", err)
+				log.Fatalf("Error retrieving sync config: %v", err)
 			}
 
 			source, destination := setupDatasources(&c)
-			defer source.DB.Close(cCtx.Context)
-			defer destination.DB.Close(cCtx.Context)
+			defer func() {
+				err := source.DB.Close(cCtx.Context)
+				if err != nil {
+					log.Fatalf("Error closing source DB connection: %v", err)
+				}
+				err = destination.DB.Close(cCtx.Context)
+				if err != nil {
+					log.Fatalf("Error closing destination DB connection: %v", err)
+				}
+			}()
 
 			if !noSafety && !destination.IsLocalHost(cCtx.Context) {
 				log.Fatalf("Destination host is not localhost or 127.0.0.1, pass --no-safety to override this")
@@ -122,12 +129,15 @@ func syncCmd(handler *config.Handler) *cli.Command {
 
 			}
 
+			if len(sc.Exclude) > 0 {
+				excluded = append(excluded, sc.Exclude...)
+			}
 			excludedTables, err := opts.ProcessExcludedArgs(excluded)
 			if err != nil {
 				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
 			}
 
-			resolver := sync.NewTaskResolver(source, destination, c.Groups, truncate, preserve, deferConstraints, disableTriggers, excludedTables)
+			resolver := sync.NewTaskResolver(source, destination, sc.Groups, truncate, preserve, deferConstraints, disableTriggers, excludedTables)
 			tasks, err := resolver.Resolve(cCtx.Context, groups, tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
