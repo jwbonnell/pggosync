@@ -1,6 +1,6 @@
 # Example: postgres://${USERNAME}:${PASSWORD}@${HOST}:${PORT}/${DATABASE}
-source: postgres://source_user:source_pw@localhost:5437/postgres
-destination: postgres://dest_user:dest_pw@localhost:5438/postgres
+source: postgres://source_user:source_pw@localhost:5432/postgres
+destination: postgres://dest_user:dest_pw@localhost:5433/postgres
 
 exclude:
   - products
