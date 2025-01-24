@@ -18,35 +18,54 @@ func syncCmd(handler *config.Handler) *cli.Command {
 		Usage: "Sync one or more groups",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:  "truncate",
-				Usage: "Truncate tables",
+				Name:    "truncate",
+				Aliases: []string{"tr"},
+				Usage:   "Truncates or deletes all rows from table before syncing. Delete all happens when --defer-constraints is passed.",
 			},
 			&cli.BoolFlag{
-				Name:  "preserve",
-				Usage: "Preserve existing tables",
+				Name:    "preserve",
+				Aliases: []string{"p"},
+				Usage:   "Preserve existing tables data. Uses insert on conflict do nothing. Without this flag, an upsert is performed. Ignored if --truncate is passed.",
 			},
 			&cli.BoolFlag{
-				Name:  "skip-confirmation",
-				Usage: "Skip confirmation",
+				Name:    "no-safety",
+				Aliases: []string{"ns"},
+				Usage:   "Remove destination safety checks. Without passing this flag, only localhost is allowed.",
 			},
 			&cli.BoolFlag{
-				Name:  "defer-constraints",
-				Usage: "Defer constraints",
+				Name:    "skip-confirmation",
+				Aliases: []string{"sc"},
+				Usage:   "Skip confirmation prompt. Useful for scripting.",
 			},
-			&cli.StringSliceFlag{
-				Name:    "group",
-				Aliases: []string{"g"},
-				Usage:   "TODO g FLAG",
+			&cli.BoolFlag{
+				Name:    "defer-constraints",
+				Aliases: []string{"dc"},
+				Usage:   "Defer constraints on destination database",
 			},
-			&cli.StringSliceFlag{
-				Name:    "table",
-				Aliases: []string{"t"},
-				Usage:   "TODO t FLAG",
+			&cli.BoolFlag{
+				Name:    "disable-triggers",
+				Aliases: []string{"dt"},
+				Usage:   "Disable triggers on destination database",
 			},
 			&cli.StringFlag{
 				Name:    "config",
 				Aliases: []string{"c"},
-				Usage:   "Config override ID",
+				Usage:   "Flag to specify the path to the sync config file.",
+			},
+			&cli.StringSliceFlag{
+				Name:    "group",
+				Aliases: []string{"g"},
+				Usage:   "Flag to specify which groups will be synced. This can be passed multiple times for multiple groups to be synced.",
+			},
+			&cli.StringSliceFlag{
+				Name:    "table",
+				Aliases: []string{"t"},
+				Usage:   "Flag to specify which tables will be synced. This can be passed multiple times for multiple tables to be synced.",
+			},
+			&cli.StringSliceFlag{
+				Name:    "exclude",
+				Aliases: []string{"e"},
+				Usage:   "Flag to specify which tables to exclude from syncing.",
 			},
 		},
 		Action: func(cCtx *cli.Context) error {
@@ -56,10 +75,11 @@ func syncCmd(handler *config.Handler) *cli.Command {
 			noSafety := cCtx.Bool("no-safety")
 			skipConfirmation := cCtx.Bool("skip-confirmation")
 			deferConstraints := cCtx.Bool("defer-constraints")
+			disableTriggers := cCtx.Bool("disable-triggers")
+			configID := cCtx.String("config")
 			groups := cCtx.StringSlice("group")
 			tables := cCtx.StringSlice("table")
 			excluded := cCtx.StringSlice("exclude")
-			configID := cCtx.String("config")
 
 			var err error
 			var c config.Config
@@ -107,13 +127,13 @@ func syncCmd(handler *config.Handler) *cli.Command {
 				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
 			}
 
-			resolver := sync.NewTaskResolver(source, destination, c.Groups, truncate, preserve, deferConstraints, excludedTables)
+			resolver := sync.NewTaskResolver(source, destination, c.Groups, truncate, preserve, deferConstraints, disableTriggers, excludedTables)
 			tasks, err := resolver.Resolve(cCtx.Context, groups, tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}
 
-			if err = sync.Sync(cCtx.Context, deferConstraints, tasks, source, destination); err != nil {
+			if err = sync.Sync(cCtx.Context, deferConstraints, disableTriggers, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

@@ -17,10 +17,11 @@ type TaskResolver struct {
 	truncate         bool
 	preserve         bool
 	deferConstraints bool
+	disableTriggers  bool
 	excluded         []db.Table
 }
 
-func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]map[string]string, truncate bool, preserve bool, deferConstraints bool, excluded []db.Table) *TaskResolver {
+func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]map[string]string, truncate bool, preserve bool, deferConstraints bool, disableTriggers bool, excluded []db.Table) *TaskResolver {
 	return &TaskResolver{
 		source:           source,
 		destination:      destination,
@@ -28,6 +29,7 @@ func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasourc
 		groups:           groups,
 		preserve:         preserve,
 		deferConstraints: deferConstraints,
+		disableTriggers:  disableTriggers,
 		excluded:         excluded}
 }
 

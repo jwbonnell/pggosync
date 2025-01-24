@@ -11,11 +11,12 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, deferConstraints bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
 	maxConcurrency := 1 // Allowed to run at the same time
 
 	// Create a buffered channel with a capacity of maxConcurrency
 	taskQueue := make(chan Task, maxConcurrency)
+	tables := getTables(tasks)
 
 	var wg sync.WaitGroup
 
@@ -48,6 +49,14 @@ func Sync(ctx context.Context, deferConstraints bool, tasks []Task, source *data
 		}
 	}
 
+	if disableTriggers {
+		err := db.DisableUserTriggers(ctx, tx.Conn(), tables)
+		if err != nil {
+			fmt.Println("DisableUserTriggers Error: ", err)
+			return err
+		}
+	}
+
 	wg.Add(len(tasks))
 	for range maxConcurrency {
 		go func() {
@@ -75,6 +84,14 @@ func Sync(ctx context.Context, deferConstraints bool, tasks []Task, source *data
 	wg.Wait()
 	close(taskQueue)
 
+	if disableTriggers {
+		err := db.RestoreUserTriggers(ctx, tx.Conn(), tables)
+		if err != nil {
+			fmt.Println("RestoreUserTriggers Error: ", err)
+			return err
+		}
+	}
+
 	if deferConstraints {
 		fmt.Println("Restore Contraints")
 		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
@@ -86,4 +103,12 @@ func Sync(ctx context.Context, deferConstraints bool, tasks []Task, source *data
 
 	fmt.Println("All tasks have completed")
 	return nil
+}
+
+func getTables(tasks []Task) []db.Table {
+	tables := make([]db.Table, len(tasks))
+	for i := range tasks {
+		tables[i] = tasks[i].Table
+	}
+	return tables
 }
