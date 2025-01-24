@@ -1,7 +1,6 @@
 # ==============================================================================
 # Tasks
 # [ ] CLI Layer
-# 		[ ] flags: truncate, preserve, defer constraints
 # 		[ ] Safety checks
 # 			[ ] localhost destination is required without explicit opt in
 #			[ ] Confirmation prompts
@@ -9,19 +8,17 @@
 #        [ ] charmed/bubbletea for TUI
 # 		[ ] Support passing in dynamic values/params, like {erno}
 # [ ] Main
-# 		[ ] Main run function
-# 		[ ] Param validation
-#		[X] Defer constraints
 #		[ ] Support table and schema exclusion
 #		[ ] Support omitting sensitive data columns
+# 		[ ] Disable triggers support, maybe needed for the AH scenario where set_modified_by was preventing upserts from succeeding
 #		
-# [ ] Table Sync
-# 		[X] truncate support
-# 		[X] defer constraints support
-# 		[ ] preserve existing data support
-# 		[ ] SCOPE - possibly support setting ON UPDATE RESTRICT and ON DELETE RESTRICT constraints to NO ACTION
-#					and restore when sync is complete. See information_schema.referential_constraints to start.
-# 		[ ] Finish insert w/ on conflict support
+
+# [ ] Bugs
+# 		[ ] Test and fix table syncing + where clause
+# 		[ ] Better handle excluded table detection, currently tables not in the list are getting picked up
+# 		[ ] Possible remove 'sync' command and just make it the default
+# 		[ ] no-safety flag is missing from flag list
+# 		[ ] clean up flags, aliases and descriptions
 
 # [ ] Prepared Statements
 # [ ] Delete with filter support
