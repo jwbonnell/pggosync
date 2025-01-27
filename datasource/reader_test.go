@@ -51,17 +51,16 @@ func TestGetSchemas(t *testing.T) {
 	defer rd.DB.Close(ctx)
 }
 
-func TestGetTriggers(t *testing.T) {
+func TestGetUserTriggers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	table := "dummy"
 
 	rd, err := getReadDataSource()
 	assert.Nil(t, err)
 
-	triggers, err := rd.GetTriggers(ctx, table)
+	triggers, err := rd.GetUserTriggers(ctx)
 	assert.Nil(t, err)
 	assert.Len(t, triggers, 1)
 	assert.Equal(t, "do_something_trigger", triggers[0].Name)

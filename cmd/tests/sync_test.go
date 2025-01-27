@@ -71,6 +71,34 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	assert.Equal(t, 0, len(country))
 }
 
+func TestTruncateDisableTriggers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
+	ctx := context.Background()
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	assert.NoError(t, err)
+	defer db.Close(ctx)
+	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7778, 'Country 7778') ON CONFLICT DO NOTHING")
+	assert.NoError(t, err)
+
+	args := os.Args[0:1]
+	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
+	args = append(args, "--group")
+	args = append(args, "country_var_1:1000")
+	args = append(args, "--truncate")
+	args = append(args, "--defer-constraints")
+	args = append(args, "--disable-triggers")
+	args = append(args, "--skip-confirmation")
+	cmd.Execute(args)
+
+	var country []Country
+	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 7778")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(country))
+}
+
 func TestSync(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode...skipping integration test")

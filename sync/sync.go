@@ -16,7 +16,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 
 	// Create a buffered channel with a capacity of maxConcurrency
 	taskQueue := make(chan Task, maxConcurrency)
-	tables := getTables(tasks)
+	//tables := getTables(tasks)
 
 	var wg sync.WaitGroup
 
@@ -27,10 +27,17 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 
 	defer func() {
 		if err != nil {
-			fmt.Println("Rolling back...")
-			tx.Rollback(ctx)
+			fmt.Println("Rolling back...", err)
+			err := tx.Rollback(ctx)
+			if err != nil {
+				fmt.Println("Rollback failed:", err)
+			}
 		} else {
-			tx.Commit(ctx)
+			fmt.Println("Committing...")
+			err := tx.Commit(ctx)
+			if err != nil {
+				fmt.Println("Commit failed:", err)
+			}
 		}
 	}()
 
@@ -49,8 +56,14 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 		}
 	}
 
+	var triggers []db.Trigger
 	if disableTriggers {
-		err := db.DisableUserTriggers(ctx, tx.Conn(), tables)
+		triggers, err = dest.GetUserTriggers(ctx)
+		if err != nil {
+			return err
+		}
+
+		err := db.DisableUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
 			fmt.Println("DisableUserTriggers Error: ", err)
 			return err
@@ -85,7 +98,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 	close(taskQueue)
 
 	if disableTriggers {
-		err := db.RestoreUserTriggers(ctx, tx.Conn(), tables)
+		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
 			fmt.Println("RestoreUserTriggers Error: ", err)
 			return err

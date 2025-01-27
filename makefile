@@ -10,7 +10,7 @@
 # [ ] Main
 #		[ ] Support table and schema exclusion
 #		[ ] Support omitting sensitive data columns
-# 		[ ] Disable triggers support, maybe needed for the AH scenario where set_modified_by was preventing upserts from succeeding
+# 		[X] Disable triggers support, maybe needed for the AH scenario where set_modified_by was preventing upserts from succeeding
 # 		[ ] Add support for configurable SSL/TLS support for PG connections
 #		
 

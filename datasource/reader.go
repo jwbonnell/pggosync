@@ -16,7 +16,7 @@ type ReadDataSource interface {
 	GetTables(ctx context.Context) ([]db.Table, error)
 	TableExists(table db.Table) bool
 	GetSchemas(ctx context.Context) ([]string, error)
-	GetTriggers(ctx context.Context, table string) ([]db.Trigger, error)
+	GetUserTriggers(ctx context.Context) ([]db.Trigger, error)
 	StatusCheck(ctx context.Context) error
 	GetNonDeferrableConstraints(ctx context.Context) ([]db.NonDeferrableConstraints, error)
 	GetName() string
@@ -95,22 +95,21 @@ func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
 	return schemas, nil
 }
 
-func (r *ReaderDataSource) GetTriggers(ctx context.Context, table string) ([]db.Trigger, error) {
+func (r *ReaderDataSource) GetUserTriggers(ctx context.Context) ([]db.Trigger, error) {
 	var triggers []db.Trigger
 	err := pgxscan.Select(ctx, r.DB, &triggers, `
 		SELECT
 				tgname AS name,
 				tgisinternal AS internal,
 				tgenabled != 'D' AS enabled,
-				tgconstraint != 0 AS integrity
+				tgconstraint != 0 AS integrity,
+				tgrelid::regclass::text AS tgrelid
 			FROM
 				pg_trigger
-			WHERE
-				pg_trigger.tgrelid = $1::regclass
-	`, table)
-	fmt.Println(triggers)
+			WHERE tgisinternal = false
+	`)
 	if err != nil {
-		return triggers, fmt.Errorf("%s GetTriggers %w", r.Name, err)
+		return triggers, fmt.Errorf("%s GetUserTriggers %w", r.Name, err)
 	}
 
 	return triggers, nil
