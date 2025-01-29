@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func syncCmd(handler *config.Handler) *cli.Command {
+func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 	cmd := cli.Command{
 		Name:  "sync",
 		Usage: "Sync one or more groups",
@@ -71,16 +71,18 @@ func syncCmd(handler *config.Handler) *cli.Command {
 		},
 		Action: func(cCtx *cli.Context) error {
 			initRequired(handler)
-			truncate := cCtx.Bool("truncate")
-			preserve := cCtx.Bool("preserve")
-			noSafety := cCtx.Bool("no-safety")
-			skipConfirmation := cCtx.Bool("skip-confirmation")
-			deferConstraints := cCtx.Bool("defer-constraints")
-			disableTriggers := cCtx.Bool("disable-triggers")
-			syncConfigPath := cCtx.String("config")
-			groups := cCtx.StringSlice("group")
-			tables := cCtx.StringSlice("table")
-			excluded := cCtx.StringSlice("exclude")
+			args := opts.CLIArgs{
+				Truncate:         cCtx.Bool("truncate"),
+				Preserve:         cCtx.Bool("preserve"),
+				NoSafety:         cCtx.Bool("no-safety"),
+				SkipConfirmation: cCtx.Bool("skip-confirmation"),
+				DeferConstraints: cCtx.Bool("defer-constraints"),
+				DisableTriggers:  cCtx.Bool("disable-triggers"),
+				SyncConfigPath:   cCtx.String("config"),
+				Groups:           cCtx.StringSlice("group"),
+				Tables:           cCtx.StringSlice("table"),
+				Excluded:         cCtx.StringSlice("exclude"),
+			}
 
 			var err error
 			c, err := handler.GetCurrentConfig()
@@ -88,7 +90,7 @@ func syncCmd(handler *config.Handler) *cli.Command {
 				log.Fatalf("Error retrieving DB connection config: %v", err)
 			}
 
-			sc, err := handler.GetSyncConfig(syncConfigPath)
+			sc, err := config.GetSyncConfig(args.SyncConfigPath)
 			if err != nil {
 				log.Fatalf("Error retrieving sync config: %v", err)
 			}
@@ -105,11 +107,11 @@ func syncCmd(handler *config.Handler) *cli.Command {
 				}
 			}()
 
-			if !noSafety && !destination.IsLocalHost(cCtx.Context) {
+			if !args.NoSafety && !destination.IsLocalHost(cCtx.Context) {
 				log.Fatalf("Destination host is not localhost or 127.0.0.1, pass --no-safety to override this")
 			}
 
-			if !skipConfirmation {
+			if !args.SkipConfirmation {
 				fmt.Print("Do you want to proceed? (yes/no): ")
 				reader := bufio.NewReader(os.Stdin)
 				response, err := reader.ReadString('\n')
@@ -129,21 +131,22 @@ func syncCmd(handler *config.Handler) *cli.Command {
 
 			}
 
+			var excluded []string
 			if len(sc.Exclude) > 0 {
-				excluded = append(excluded, sc.Exclude...)
+				excluded = append(args.Excluded, sc.Exclude...)
 			}
 			excludedTables, err := opts.ProcessExcludedArgs(excluded)
 			if err != nil {
 				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
 			}
 
-			resolver := sync.NewTaskResolver(source, destination, sc.Groups, truncate, preserve, deferConstraints, disableTriggers, excludedTables)
-			tasks, err := resolver.Resolve(cCtx.Context, groups, tables)
+			resolver := sync.NewTaskResolver(source, destination, sc.Groups, args.Truncate, args.Preserve, args.DeferConstraints, args.DisableTriggers, excludedTables)
+			tasks, err := resolver.Resolve(cCtx.Context, args.Groups, args.Tables)
 			if err != nil {
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}
 
-			if err = sync.Sync(cCtx.Context, deferConstraints, disableTriggers, tasks, source, destination); err != nil {
+			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

@@ -11,7 +11,7 @@ import (
 )
 
 func Execute(args []string) {
-	handler := config.Handler{
+	handler := config.UserConfigHandler{
 		PathHandler: config.OSPathHandler{},
 	}
 	app := &cli.App{
@@ -32,7 +32,7 @@ func Execute(args []string) {
 	}
 }
 
-func initRequired(handler *config.Handler) {
+func initRequired(handler *config.UserConfigHandler) {
 	forceInit := false
 	_, err := handler.GetDefault()
 	if err != nil {
@@ -45,7 +45,7 @@ func initRequired(handler *config.Handler) {
 	}
 }
 
-func setupDatasources(c *config.Config) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
+func setupDatasources(c *config.UserConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
 	destination, err := datasource.NewReadWriteDataSource("destination", url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", c.Destination.Host, c.Destination.Port),

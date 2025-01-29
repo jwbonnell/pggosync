@@ -25,7 +25,7 @@ func cleanupTest() {
 
 func TestConfigHandler_SetGetDefault(t *testing.T) {
 	defer cleanupTest()
-	handler := NewConfigHandler(TestPathHandler{})
+	handler := NewUserConfigHandler(TestPathHandler{})
 	err := handler.SetDefault("burrito")
 	assert.NoError(t, err)
 
@@ -36,19 +36,21 @@ func TestConfigHandler_SetGetDefault(t *testing.T) {
 
 func TestConfigHandler_InitConfig(t *testing.T) {
 	defer cleanupTest()
-	handler := NewConfigHandler(TestPathHandler{})
+	handler := NewUserConfigHandler(TestPathHandler{})
 	err := handler.InitConfig("taco")
 	assert.NoError(t, err)
 	config, err := handler.GetConfig("taco")
 	assert.NoError(t, err)
 
-	_, ok := config.Groups["country"]
-	assert.True(t, ok)
+	assert.Equal(t, "localhost", config.Source.Host)
+	assert.Equal(t, "5432", config.Source.Port)
+	assert.Equal(t, "localhost", config.Destination.Host)
+	assert.Equal(t, "5433", config.Destination.Port)
 }
 
 func TestConfigHandler_UpdateDefault(t *testing.T) {
 	defer cleanupTest()
-	handler := NewConfigHandler(TestPathHandler{})
+	handler := NewUserConfigHandler(TestPathHandler{})
 	err := handler.SetDefault("something")
 	assert.NoError(t, err)
 
@@ -89,7 +91,7 @@ func TestConfigHandler_ListConfigs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			defer cleanupTest()
-			handler := &Handler{
+			handler := &UserConfigHandler{
 				PathHandler: TestPathHandler{},
 			}
 
