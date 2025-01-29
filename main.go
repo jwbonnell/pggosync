@@ -5,6 +5,8 @@ import (
 	"os"
 )
 
+var build = "development"
+
 func main() {
-	cmd.Execute(os.Args)
+	cmd.Execute(build, os.Args)
 }

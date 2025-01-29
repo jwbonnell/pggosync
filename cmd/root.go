@@ -10,16 +10,17 @@ import (
 	"os"
 )
 
-func Execute(args []string) {
+func Execute(build string, args []string) {
 	handler := config.UserConfigHandler{
 		PathHandler: config.OSPathHandler{},
 	}
 	app := &cli.App{
 		Action: func(cCtx *cli.Context) error {
-			fmt.Println("BASE ACTION")
+			fmt.Println("BASE ACTION TODO")
 			return nil
 		},
 		Commands: []*cli.Command{
+			versionCmd(build),
 			initCmd(&handler),
 			syncCmd(&handler),
 			listCmd(&handler),

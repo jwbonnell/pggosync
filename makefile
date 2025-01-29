@@ -33,6 +33,7 @@
 # ==============================================================================
 # Variables
 
+VERSION=0.1.0-prerelease
 PSQL_SOURCE_CMD := docker compose exec source_db psql -h localhost -U source_user -d postgres
 PSQL_DEST_CMD   := docker compose exec dest_db psql -h localhost -U dest_user -d postgres
 
@@ -51,6 +52,13 @@ reset-docker-databases:
 	docker volume rm pggosync_source-db-data
 	docker volume rm pggosync_dest-db-data
 	docker compose up -d --force-recreate
+
+# ==============================================================================
+# Build Commands
+# ==============================================================================
+
+build:
+	go build -ldflags "-s -w -X main.build=$(VERSION)" -o ./bin/pggosync main.go
 
 # ==============================================================================
 # CLI Commands
