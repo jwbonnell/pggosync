@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -112,7 +113,43 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 			}
 
 			if !args.SkipConfirmation {
-				fmt.Print("Do you want to proceed? (yes/no): ")
+				fmt.Printf(`
+=================================================================
+   ___  __________     ____             
+  / _ \/ ___/ ___/__  / __/_ _____  ____
+ / ___/ (_ / (_ / _ \_\ \/ // / _ \/ __/
+/_/   \___/\___/\___/___/\_, /_//_/\__/ 
+                        /___/
+Config Description: %s
+Source: %s:%s/%s                     Destination: %s:%s/%s
+                                              :.
+                 ============================:::'.
+                 ============================::::::.
+                 ============================::::'
+                                              :'
+Truncate?: %s
+Preserve?: %s
+Disable Triggers?: %s
+Defer Constraints? %s
+No Safety? %s
+Skip Confirmation? %s
+=================================================================
+`, sc.Description,
+					c.Source.Host,
+					c.Source.Port,
+					c.Source.Database,
+					c.Destination.Host,
+					c.Destination.Port,
+					c.Destination.Database,
+					strconv.FormatBool(args.Truncate),
+					strconv.FormatBool(args.Preserve),
+					strconv.FormatBool(args.DisableTriggers),
+					strconv.FormatBool(args.DeferConstraints),
+					strconv.FormatBool(args.NoSafety),
+					strconv.FormatBool(args.SkipConfirmation),
+				)
+
+				fmt.Print("Do you want to proceed? (yes/no/more): ")
 				reader := bufio.NewReader(os.Stdin)
 				response, err := reader.ReadString('\n')
 				if err != nil {
@@ -124,6 +161,9 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 					fmt.Println("Starting sync")
 				case "no":
 					fmt.Println("Sync cancelled")
+					os.Exit(0)
+				case "more":
+					fmt.Println("More TODO")
 					os.Exit(0)
 				default:
 					log.Fatalln("Invalid input, aborting...")
