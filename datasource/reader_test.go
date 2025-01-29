@@ -24,7 +24,11 @@ func TestGetTables(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Len(t, tables, 12)
 
-	defer rd.DB.Close(ctx)
+	defer func() {
+		if err := rd.DB.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func TestGetSchemas(t *testing.T) {
@@ -48,7 +52,11 @@ func TestGetSchemas(t *testing.T) {
 
 	assert.True(t, found)
 
-	defer rd.DB.Close(ctx)
+	defer func() {
+		if err := rd.DB.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func TestGetUserTriggers(t *testing.T) {
@@ -65,7 +73,11 @@ func TestGetUserTriggers(t *testing.T) {
 	assert.Len(t, triggers, 1)
 	assert.Equal(t, "do_something_trigger", triggers[0].Name)
 
-	defer rd.DB.Close(ctx)
+	defer func() {
+		if err := rd.DB.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func TestStatusCheck(t *testing.T) {
@@ -80,7 +92,11 @@ func TestStatusCheck(t *testing.T) {
 	err = rd.StatusCheck(ctx)
 	assert.Nil(t, err)
 
-	defer rd.DB.Close(ctx)
+	defer func() {
+		if err := rd.DB.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func TestGetNonDeferrableConstraints(t *testing.T) {
@@ -95,7 +111,11 @@ func TestGetNonDeferrableConstraints(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Len(t, ndc, 7)
 
-	defer rd.DB.Close(ctx)
+	defer func() {
+		if err := rd.DB.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func getReadDataSource() (*ReaderDataSource, error) {

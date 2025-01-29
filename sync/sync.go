@@ -78,7 +78,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 				ts := NewTableSync(source, dest)
 				err = ts.Sync(ctx, &task)
 				if err != nil {
-					//TODO Update goroutines to handle error appropriately using select or something
+					//TODO Update goroutines to handle error appropriately
 					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), err)
 				}
 

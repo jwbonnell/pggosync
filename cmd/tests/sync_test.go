@@ -25,7 +25,11 @@ func TestTruncate(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7777, 'Country 7777') ON CONFLICT DO NOTHING")
 	assert.NoError(t, err)
 
@@ -51,7 +55,11 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7777, 'Country 7777') ON CONFLICT DO NOTHING")
 	assert.NoError(t, err)
 
@@ -78,7 +86,11 @@ func TestTruncateDisableTriggers(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7778, 'Country 7778') ON CONFLICT DO NOTHING")
 	assert.NoError(t, err)
 
@@ -106,7 +118,11 @@ func TestSync(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (1001, 'Country 1001 - TEST') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
 	assert.NoError(t, err)
 
@@ -131,7 +147,11 @@ func TestSync_Preserve(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (1001, 'Country 1001 - TEST') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
 	assert.NoError(t, err)
 
@@ -158,7 +178,11 @@ func TestSync_Table(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
@@ -182,7 +206,11 @@ func TestSync_TableMulti(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
 	assert.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
