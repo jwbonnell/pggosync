@@ -3,3 +3,4 @@ sql/testsync.pgsql
 .idea
 .config/
 .test-config/
+/bin/pggosync
