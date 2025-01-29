@@ -130,7 +130,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 
 	var tasks []Task
 	for tkey, filter := range group {
-		schema, table, err := opts.ParseFullTableName(tkey)
+		schema, tab, err := opts.ParseFullTableName(tkey)
 		if err != nil {
 			return nil, err
 		}
@@ -138,7 +138,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 		filter = opts.ApplyParamToFilter(params, filter)
 
 		tasks = append(tasks, Task{
-			Table:            db.Table{Schema: schema, Name: table},
+			Table:            db.Table{Schema: schema, Name: tab},
 			Filter:           filter,
 			Preserve:         tr.preserve,
 			Truncate:         tr.truncate,

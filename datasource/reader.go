@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5"
 	"github.com/jwbonnell/pggosync/db"
 )
+
+var reservedColumnNames = []string{
+	"order",
+	"limit",
+	"offset",
+}
 
 type ReadDataSource interface {
 	GetTables(ctx context.Context) ([]db.Table, error)
@@ -181,6 +188,12 @@ func (r *ReaderDataSource) GetColumns(ctx context.Context) ([]db.Column, error) 
 	`)
 	if err != nil {
 		return nil, err
+	}
+
+	for i := range cols {
+		if slices.Contains(reservedColumnNames, cols[i].Name) {
+			cols[i].Name = fmt.Sprintf("\"%s\"", cols[i].Name)
+		}
 	}
 
 	return cols, nil

@@ -34,6 +34,9 @@ func configCmd(handler *config.UserConfigHandler) *cli.Command {
 						return err
 					}
 
+					c.Source.Password = "*************"
+					c.Destination.Password = "*************"
+
 					out, err := yaml.Marshal(c)
 					if err != nil {
 						return err
@@ -41,7 +44,7 @@ func configCmd(handler *config.UserConfigHandler) *cli.Command {
 
 					fmt.Printf("Current: %s\n", configID)
 					fmt.Println("--------------------------")
-					fmt.Printf("Config: %s\n", out)
+					fmt.Printf("%s\n", out)
 					return nil
 				},
 			},
