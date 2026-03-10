@@ -58,7 +58,8 @@ reset-docker-databases:
 # ==============================================================================
 
 build:
-	go build -ldflags "-s -w -X main.build=$(VERSION)" -o ./bin/pggosync main.go
+	GOARCH=amd64 go build -ldflags "-s -w -X main.build=$(VERSION)" -o ./bin/amd64/pggosync main.go
+	GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.build=$(VERSION)" -o ./bin/arm64/pggosync main.go
 
 # ==============================================================================
 # CLI Commands

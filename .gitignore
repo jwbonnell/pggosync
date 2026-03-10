@@ -4,3 +4,4 @@ sql/testsync.pgsql
 .config/
 .test-config/
 /bin/pggosync
+/bin/
