@@ -3,14 +3,15 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"github.com/jwbonnell/pggosync/config"
-	"github.com/jwbonnell/pggosync/opts"
-	"github.com/jwbonnell/pggosync/sync"
-	"github.com/urfave/cli/v2"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/jwbonnell/pggosync/config"
+	"github.com/jwbonnell/pggosync/opts"
+	"github.com/jwbonnell/pggosync/sync"
+	"github.com/urfave/cli/v2"
 )
 
 func syncCmd(handler *config.UserConfigHandler) *cli.Command {
@@ -79,6 +80,12 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Aliases: []string{"dr"},
 				Usage:   "Simulate the sync without committing changes. Shows row counts per table.",
 			},
+			&cli.IntFlag{
+				Name:    "concurrency",
+				Aliases: []string{"con"},
+				Value:   1,
+				Usage:   "Number of source tables to pre-fetch concurrently. Each uses its own source connection. Destination writes remain sequential and atomic.",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
 			initRequired(handler)
@@ -89,6 +96,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				SkipConfirmation: cCtx.Bool("skip-confirmation"),
 				Quiet:            cCtx.Bool("quiet"),
 				DryRun:           cCtx.Bool("dry-run"),
+				Concurrency:      cCtx.Int("concurrency"),
 				DeferConstraints: cCtx.Bool("defer-constraints"),
 				DisableTriggers:  cCtx.Bool("disable-triggers"),
 				SyncConfigPath:   cCtx.String("config"),
@@ -205,7 +213,11 @@ Tables: %d
 							} else if t.Preserve {
 								strategy = "preserve"
 							}
-							fmt.Printf("  %-40s [%s]\n", t.FullName(), strategy)
+							rowInfo := ""
+							if t.Truncate && !t.Preserve {
+								rowInfo = fmt.Sprintf(" — %s dest rows will be deleted", sync.FormatCount(t.DestRowCount))
+							}
+							fmt.Printf("  %-40s [%s]%s\n", t.FullName(), strategy, rowInfo)
 						}
 						fmt.Println()
 					default:
@@ -215,7 +227,7 @@ Tables: %d
 			proceed:
 			}
 
-			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, tasks, source, destination); err != nil {
+			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

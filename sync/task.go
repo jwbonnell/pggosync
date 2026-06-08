@@ -16,6 +16,7 @@ type Task struct {
 	Preserve         bool
 	Truncate         bool
 	DeferConstraints bool
+	DestRowCount     int64
 }
 
 func (t *Task) GetDestPKs() []string {

@@ -1,9 +1,11 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -11,16 +13,46 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
-	maxConcurrency := 1 // Allowed to run at the same time
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
+	bufs := make([]*SafeBuffer, len(tasks))
+	for i := range bufs {
+		bufs[i] = NewSafeBuffer(&bytes.Buffer{})
+	}
 
-	taskQueue := make(chan Task, maxConcurrency)
+	// Launch a goroutine per task to CopyTo from source into its SafeBuffer.
+	// A semaphore caps simultaneous source connections to concurrency.
+	sem := make(chan struct{}, concurrency)
+	var prefetchWg sync.WaitGroup
 
-	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		taskErrs []error
-	)
+	go func() {
+		for i := range tasks {
+			sem <- struct{}{}
+			prefetchWg.Add(1)
+			go func(i int) {
+				defer prefetchWg.Done()
+				defer func() { <-sem }()
+
+				task := &tasks[i]
+				cols := task.GetSharedColumnNames()
+				query := fmt.Sprintf("COPY (SELECT %s FROM %s %s) TO STDOUT",
+					strings.Join(cols, ","), task.FullName(), task.Filter)
+
+				pgConn, err := source.NewPgConn(ctx)
+				if err != nil {
+					bufs[i].SetDoneWithError(fmt.Errorf("source connection: %w", err))
+					return
+				}
+				defer pgConn.Close(ctx)
+
+				_, err = pgConn.CopyTo(ctx, bufs[i], query)
+				if err != nil {
+					bufs[i].SetDoneWithError(err)
+				} else {
+					bufs[i].SetDone()
+				}
+			}(i)
+		}
+	}()
 
 	tx, err := dest.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -78,34 +110,25 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		}
 	}
 
-	wg.Add(len(tasks))
-	for range maxConcurrency {
-		go func() {
-			for task := range taskQueue {
-				if !quiet {
-					fmt.Printf("Syncing %s...\n", task.FullName())
-				}
-				ts := NewTableSync(source, dest)
-				rowCount, taskErr := ts.Sync(ctx, &task)
-				if taskErr != nil {
-					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), taskErr)
-					mu.Lock()
-					taskErrs = append(taskErrs, taskErr)
-					mu.Unlock()
-				} else if !quiet {
-					fmt.Printf("Done %s (%s rows)\n", task.FullName(), formatCount(rowCount))
-				}
-				wg.Done()
-			}
-		}()
-	}
+	// Sequential write loop: drain each SafeBuffer into the destination transaction.
+	var taskErrs []error
+	ts := NewTableSync(source, dest)
 
 	for i := range tasks {
-		taskQueue <- tasks[i]
+		if !quiet {
+			fmt.Printf("Syncing %s...\n", tasks[i].FullName())
+		}
+
+		rowCount, taskErr := ts.SyncFromBuffer(ctx, &tasks[i], bufs[i])
+		if taskErr != nil {
+			fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", tasks[i].FullName(), taskErr)
+			taskErrs = append(taskErrs, taskErr)
+		} else if !quiet {
+			fmt.Printf("Done %s (%s rows)\n", tasks[i].FullName(), FormatCount(rowCount))
+		}
 	}
 
-	wg.Wait()
-	close(taskQueue)
+	prefetchWg.Wait()
 
 	if len(taskErrs) > 0 {
 		err = fmt.Errorf("%d task(s) failed; first error: %w", len(taskErrs), taskErrs[0])
@@ -139,7 +162,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	return nil
 }
 
-func formatCount(n int64) string {
+func FormatCount(n int64) string {
 	if n == 0 {
 		return "0"
 	}

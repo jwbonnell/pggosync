@@ -1,9 +1,9 @@
 package sync
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -23,7 +23,11 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 	}
 }
 
-func (t *TableSync) Sync(ctx context.Context, task *Task) (int64, error) {
+// SyncFromBuffer performs the destination-side operations for a task, reading
+// source data from buf (pre-fetched COPY TO STDOUT format) instead of querying
+// the source database directly. The source CopyTo must run concurrently in a
+// separate goroutine writing into buf.
+func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reader) (int64, error) {
 	sharedColumns := task.GetSharedColumnNames()
 	scrubbedColumns := sharedColumns[:] ///TODO implement scrubbing
 
@@ -33,14 +37,14 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) (int64, error) {
 		}
 
 		ttName := db.GenTempTableName(0, task.Table.Name)
-		err := t.destination.CreateTempTable(ctx, ttName, task.Table.FullName())
-		if err != nil {
+		if err := t.destination.CreateTempTable(ctx, ttName, task.Table.FullName()); err != nil {
 			return 0, fmt.Errorf("datasource.CreateTempTable: %w", err)
 		}
 
-		rowCount, err := t.copy(ctx, task.Table.FullName(), ttName, task.Filter, scrubbedColumns, sharedColumns)
+		dconn := t.destination.DB.PgConn()
+		cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", ttName, strings.Join(scrubbedColumns, ",")))
 		if err != nil {
-			return 0, fmt.Errorf("TableSync.copy temp table %s: %w", ttName, err)
+			return 0, fmt.Errorf("CopyFrom temp table %s: %w", ttName, err)
 		}
 
 		destPKs := task.GetDestPKs()
@@ -52,52 +56,32 @@ func (t *TableSync) Sync(ctx context.Context, task *Task) (int64, error) {
 					onConflictAction = append(onConflictAction, fmt.Sprintf("%s = EXCLUDED.%s", sharedColumns[i], sharedColumns[i]))
 				}
 			}
-
 			if len(onConflictAction) > 0 {
 				action = fmt.Sprintf("UPDATE SET %s", strings.Join(onConflictAction, ","))
 			}
 		}
 
-		err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action)
-		if err != nil {
+		if err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action); err != nil {
 			return 0, fmt.Errorf("TableSync.InsertFromTempTable %w", err)
 		}
-		return rowCount, nil
+		return cftag.RowsAffected(), nil
 
 	} else {
 		if task.DeferConstraints {
-			err := t.destination.DeleteAll(ctx, task.Table.FullName())
-			if err != nil {
+			if err := t.destination.DeleteAll(ctx, task.Table.FullName()); err != nil {
 				return 0, fmt.Errorf("TableSync DeleteAll %w", err)
 			}
 		} else {
-			err := t.destination.Truncate(ctx, task.Table.FullName())
-			if err != nil {
+			if err := t.destination.Truncate(ctx, task.Table.FullName()); err != nil {
 				return 0, fmt.Errorf("TableSync Truncate %w", err)
 			}
 		}
 
-		rowCount, err := t.copy(ctx, task.Table.FullName(), task.Table.FullName(), task.Filter, scrubbedColumns, sharedColumns)
+		dconn := t.destination.DB.PgConn()
+		cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", task.Table.FullName(), strings.Join(scrubbedColumns, ",")))
 		if err != nil {
-			return 0, fmt.Errorf("TableSync.copy %w", err)
+			return 0, fmt.Errorf("CopyFrom %w", err)
 		}
-		return rowCount, nil
+		return cftag.RowsAffected(), nil
 	}
-}
-
-func (t *TableSync) copy(ctx context.Context, sourceTable string, destTable string, sourceFilter string, sourceFields []string, destFields []string) (int64, error) {
-	var buf bytes.Buffer
-	sconn := t.source.DB.PgConn()
-	cttag, err := sconn.CopyTo(ctx, &buf, fmt.Sprintf("COPY (SELECT %s FROM %s %s ) TO STDOUT", strings.Join(sourceFields, ","), sourceTable, sourceFilter))
-	if err != nil {
-		return 0, fmt.Errorf("CopyTo - tag:%s  err:%w", cttag, err)
-	}
-
-	dconn := t.destination.DB.PgConn()
-	cftag, err := dconn.CopyFrom(ctx, &buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", destTable, strings.Join(destFields, ",")))
-	if err != nil {
-		return 0, fmt.Errorf("CopyFrom - tag:%s err:%w cttag:%s", cftag, err, cttag)
-	}
-
-	return cftag.RowsAffected(), nil
 }

@@ -124,14 +124,102 @@ CREATE TABLE dummy_seed (
   PRIMARY KEY (id)
 );
 
+-- BIGSERIAL PK, self-referential FK, BOOLEAN, TIMESTAMP
+CREATE TABLE employee (
+  employee_id  BIGSERIAL PRIMARY KEY,
+  name         VARCHAR(250) NOT NULL,
+  role         VARCHAR(100),
+  manager_id   BIGINT REFERENCES employee(employee_id),
+  hire_date    TIMESTAMP,
+  active       BOOLEAN NOT NULL DEFAULT true
+);
+
+-- BOOLEAN column, DATE range, NUMERIC discount
+CREATE TABLE promotion (
+  promotion_id  INT PRIMARY KEY,
+  code          VARCHAR(50) NOT NULL,
+  active        BOOLEAN NOT NULL DEFAULT true,
+  start_date    DATE,
+  end_date      DATE,
+  discount_pct  NUMERIC(5,2)
+);
+
+-- Composite PK junction table
+CREATE TABLE promotion_sale (
+  promotion_id  INT          NOT NULL REFERENCES promotion(promotion_id),
+  sale_id       VARCHAR(200) NOT NULL REFERENCES sale(sale_id),
+  applied_at    TIMESTAMP,
+  PRIMARY KEY (promotion_id, sale_id)
+);
+
+-- SERIAL PK, JSONB, NUMERIC rating, TEXT body
+CREATE TABLE review (
+  review_id   SERIAL PRIMARY KEY,
+  product_id  INT NOT NULL REFERENCES product(product_id),
+  user_id     INT NOT NULL REFERENCES users(user_id),
+  rating      NUMERIC(3,1),
+  body        TEXT,
+  metadata    JSONB,
+  created_at  TIMESTAMP DEFAULT now()
+);
+
+-- catalog schema: self-referential category tree, composite PK, JSONB product details
+CREATE SCHEMA catalog;
+
+CREATE TABLE catalog.category (
+  category_id  INT PRIMARY KEY,
+  name         VARCHAR(250) NOT NULL,
+  parent_id    INT REFERENCES catalog.category(category_id),
+  description  TEXT
+);
+
+CREATE TABLE catalog.product_category (
+  product_id   INT NOT NULL REFERENCES public.product(product_id),
+  category_id  INT NOT NULL REFERENCES catalog.category(category_id),
+  PRIMARY KEY (product_id, category_id)
+);
+
+CREATE TABLE catalog.product_detail (
+  product_id    INT PRIMARY KEY REFERENCES public.product(product_id),
+  attributes    JSONB,
+  discontinued  BOOLEAN NOT NULL DEFAULT false,
+  barcode       BIGINT,
+  weight_kg     NUMERIC(10,4)
+);
+
+-- inventory schema: cross-schema FK chain, composite PK, BIGINT quantity
+CREATE SCHEMA inventory;
+
+CREATE TABLE inventory.warehouse (
+  warehouse_id  INT PRIMARY KEY,
+  name          VARCHAR(250) NOT NULL,
+  city_id       INT NOT NULL REFERENCES public.city(city_id),
+  capacity      INT
+);
+
+CREATE TABLE inventory.stock_level (
+  warehouse_id  INT     NOT NULL REFERENCES inventory.warehouse(warehouse_id),
+  product_id    INT     NOT NULL REFERENCES public.product(product_id),
+  quantity      BIGINT  NOT NULL DEFAULT 0,
+  last_updated  TIMESTAMP DEFAULT now(),
+  PRIMARY KEY (warehouse_id, product_id)
+);
+
 CREATE OR REPLACE VIEW summary_vw AS
-   SELECT 
+   SELECT
       (SELECT count(*) as product_rows FROM public.product),
       (SELECT count(*) as city_rows FROM public.city),
-      (SELECT count(*) as country_rows FROM public.country), 
-      (SELECT count(*) as store_rows FROM public.store), 
+      (SELECT count(*) as country_rows FROM public.country),
+      (SELECT count(*) as store_rows FROM public.store),
       (SELECT count(*) as users_rows FROM public.users),
       (SELECT count(*) as sale_rows FROM public.sale),
-      (SELECT count(*) as order_rows FROM public.order_status), 
-      (SELECT count(*) as status_rows FROM public.status_name) 
+      (SELECT count(*) as order_rows FROM public.order_status),
+      (SELECT count(*) as status_rows FROM public.status_name),
+      (SELECT count(*) as employee_rows FROM public.employee),
+      (SELECT count(*) as promotion_rows FROM public.promotion),
+      (SELECT count(*) as review_rows FROM public.review),
+      (SELECT count(*) as category_rows FROM catalog.category),
+      (SELECT count(*) as product_detail_rows FROM catalog.product_detail),
+      (SELECT count(*) as warehouse_rows FROM inventory.warehouse),
+      (SELECT count(*) as stock_level_rows FROM inventory.stock_level)
 ;

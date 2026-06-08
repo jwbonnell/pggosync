@@ -1,0 +1,43 @@
+description: Manual testing configuration for pggosync — exercises multi-schema sync,
+  composite PKs, JSONB columns, BIGSERIAL/SERIAL sequences, self-referential FKs,
+  boolean filters, and parameterized group queries.
+
+exclude:
+  - dummy
+  - dummy_truncate
+  - dummy_delete
+  - dummy_seed
+
+groups:
+
+  # Multi-schema with cross-schema FK chain.
+  # Syncs warehouses and stock for a given country (by country_id).
+  # Try: --group store_inventory:10 --defer-constraints
+  store_inventory:
+    inventory.warehouse: "where city_id IN (SELECT city_id FROM public.city WHERE country_id = {1})"
+    inventory.stock_level: "where warehouse_id IN (SELECT warehouse_id FROM inventory.warehouse WHERE city_id IN (SELECT city_id FROM public.city WHERE country_id = {1}))"
+
+  # catalog schema: self-ref FK (category tree), composite PK (product_category), JSONB.
+  # Syncs all categories plus the products/details linked to a given category + its children.
+  # Try: --group product_catalog:1   (1=Electronics, 2=Apparel, 3=Home & Garden, etc.)
+  product_catalog:
+    catalog.category: ""
+    catalog.product_category: "where category_id IN (SELECT category_id FROM catalog.category WHERE category_id = {1} OR parent_id = {1})"
+    catalog.product_detail: "where product_id IN (SELECT product_id FROM catalog.product_category WHERE category_id IN (SELECT category_id FROM catalog.category WHERE category_id = {1} OR parent_id = {1}))"
+
+  # BOOLEAN column filter + composite PK junction table.
+  # Try: --group active_promotions --truncate
+  active_promotions:
+    promotion: "where active = true"
+    promotion_sale: "where promotion_id IN (SELECT promotion_id FROM promotion WHERE active = true)"
+
+  # Self-referential FK (manager_id → employee_id).
+  # Requires --defer-constraints to sync without ordered inserts.
+  # Try: --group employee_org --defer-constraints --truncate
+  employee_org:
+    employee: ""
+
+  # SERIAL PK, JSONB metadata, TEXT body, NUMERIC rating.
+  # Try: --group product_reviews:5   (product_id to filter by)
+  product_reviews:
+    review: "where product_id = {1}"

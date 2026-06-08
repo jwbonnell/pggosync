@@ -117,9 +117,17 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 	}
 
 	var missingPK []string
-	for _, task := range tasks {
+	for i, task := range tasks {
 		if (!task.Truncate || task.Preserve) && len(task.DestPK) == 0 {
 			missingPK = append(missingPK, task.Table.FullName())
+		}
+
+		if task.Truncate && !task.Preserve {
+			count, err := tr.destination.GetRowCount(ctx, task.Table.FullName())
+			if err != nil {
+				return nil, err
+			}
+			tasks[i].DestRowCount = count
 		}
 	}
 	if len(missingPK) > 0 {

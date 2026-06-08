@@ -10,6 +10,7 @@ import (
 
 	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jwbonnell/pggosync/db"
 )
 
@@ -250,6 +251,15 @@ func (r *ReaderDataSource) GetSequences(ctx context.Context) ([]db.Sequence, err
 	return sequences, nil
 }
 
+func (r *ReaderDataSource) GetRowCount(ctx context.Context, tableName string) (int64, error) {
+	var count int64
+	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("GetRowCount %s: %w", tableName, err)
+	}
+	return count, nil
+}
+
 func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
 	re := regexp.MustCompile(`postgres:\/\/.*:.*@(localhost|127\.0\.0\.1)`)
 	return re.MatchString(r.Url)
@@ -257,4 +267,11 @@ func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
 
 func (r *ReaderDataSource) GetName() string {
 	return r.Name
+}
+
+// NewPgConn opens a new low-level connection to the source database.
+// Callers are responsible for closing it with pgConn.Close(ctx).
+// Used by pre-fetch goroutines so each gets its own independent connection.
+func (r *ReaderDataSource) NewPgConn(ctx context.Context) (*pgconn.PgConn, error) {
+	return pgconn.Connect(ctx, r.Url)
 }

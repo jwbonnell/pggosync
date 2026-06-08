@@ -1,16 +1,12 @@
 # ==============================================================================
 # Tasks
 # [ ] CLI Layer
-# 		[ ] Safety checks
-# 			[ ] localhost destination is required without explicit opt in
-#			[ ] Confirmation prompts
 # 		[ ] CLI frameworks
 #        [ ] charmed/bubbletea for TUI
 # 		[ ] Support passing in dynamic values/params, like {erno}
 # [ ] Main
 #		[ ] Support table and schema exclusion
 #		[ ] Support omitting sensitive data columns
-# 		[X] Disable triggers support, maybe needed for the AH scenario where set_modified_by was preventing upserts from succeeding
 # 		[ ] Add support for configurable SSL/TLS support for PG connections
 #		
 

@@ -9,6 +9,7 @@ type CLIArgs struct {
 	SkipConfirmation bool
 	Quiet            bool
 	DryRun           bool
+	Concurrency      int
 	SyncConfigPath   string
 	Groups           []string
 	Tables           []string
