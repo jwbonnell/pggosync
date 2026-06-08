@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/opts"
@@ -112,6 +114,16 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 		if ok {
 			tasks[i].SourceSequences = sourceSeq
 		}
+	}
+
+	var missingPK []string
+	for _, task := range tasks {
+		if (!task.Truncate || task.Preserve) && len(task.DestPK) == 0 {
+			missingPK = append(missingPK, task.Table.FullName())
+		}
+	}
+	if len(missingPK) > 0 {
+		return nil, fmt.Errorf("tables require a primary key for upsert sync (use --truncate or add a PK): %s", strings.Join(missingPK, ", "))
 	}
 
 	return tasks, nil

@@ -7,6 +7,7 @@ type CLIArgs struct {
 	DisableTriggers  bool
 	NoSafety         bool
 	SkipConfirmation bool
+	Quiet            bool
 	SyncConfigPath   string
 	Groups           []string
 	Tables           []string

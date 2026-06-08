@@ -69,6 +69,11 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Aliases: []string{"e"},
 				Usage:   "Flag to specify which tables to exclude from syncing.",
 			},
+			&cli.BoolFlag{
+				Name:    "quiet",
+				Aliases: []string{"q"},
+				Usage:   "Suppress per-table progress output. Only errors and the final summary are printed.",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
 			initRequired(handler)
@@ -77,6 +82,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Preserve:         cCtx.Bool("preserve"),
 				NoSafety:         cCtx.Bool("no-safety"),
 				SkipConfirmation: cCtx.Bool("skip-confirmation"),
+				Quiet:            cCtx.Bool("quiet"),
 				DeferConstraints: cCtx.Bool("defer-constraints"),
 				DisableTriggers:  cCtx.Bool("disable-triggers"),
 				SyncConfigPath:   cCtx.String("config"),
@@ -112,65 +118,6 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				log.Fatalf("Destination host is not localhost or 127.0.0.1, pass --no-safety to override this")
 			}
 
-			if !args.SkipConfirmation {
-				fmt.Printf(`
-=================================================================
-   ___  __________     ____             
-  / _ \/ ___/ ___/__  / __/_ _____  ____
- / ___/ (_ / (_ / _ \_\ \/ // / _ \/ __/
-/_/   \___/\___/\___/___/\_, /_//_/\__/ 
-                        /___/
-Config Description: %s
-Source: %s:%s/%s                     Destination: %s:%s/%s
-                                              :.
-                 ============================:::'.
-                 ============================::::::.
-                 ============================::::'
-                                              :'
-Truncate?: %s
-Preserve?: %s
-Disable Triggers?: %s
-Defer Constraints? %s
-No Safety? %s
-Skip Confirmation? %s
-=================================================================
-`, sc.Description,
-					c.Source.Host,
-					c.Source.Port,
-					c.Source.Database,
-					c.Destination.Host,
-					c.Destination.Port,
-					c.Destination.Database,
-					strconv.FormatBool(args.Truncate),
-					strconv.FormatBool(args.Preserve),
-					strconv.FormatBool(args.DisableTriggers),
-					strconv.FormatBool(args.DeferConstraints),
-					strconv.FormatBool(args.NoSafety),
-					strconv.FormatBool(args.SkipConfirmation),
-				)
-
-				fmt.Print("Do you want to proceed? (yes/no/more): ")
-				reader := bufio.NewReader(os.Stdin)
-				response, err := reader.ReadString('\n')
-				if err != nil {
-					log.Fatalf("Error reading input: %v", err)
-				}
-
-				switch strings.TrimSpace(response) {
-				case "yes":
-					fmt.Println("Starting sync")
-				case "no":
-					fmt.Println("Sync cancelled")
-					os.Exit(0)
-				case "more":
-					fmt.Println("More TODO")
-					os.Exit(0)
-				default:
-					log.Fatalln("Invalid input, aborting...")
-				}
-
-			}
-
 			var excluded []string
 			if len(sc.Exclude) > 0 {
 				excluded = append(args.Excluded, sc.Exclude...)
@@ -186,7 +133,78 @@ Skip Confirmation? %s
 				log.Fatalf("TaskResolver.Resolve: %v", err)
 			}
 
-			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, tasks, source, destination); err != nil {
+			if !args.SkipConfirmation {
+				reader := bufio.NewReader(os.Stdin)
+				for {
+					fmt.Printf(`
+=================================================================
+   ___  __________     ____
+  / _ \/ ___/ ___/__  / __/_ _____  ____
+ / ___/ (_ / (_ / _ \_\ \/ // / _ \/ __/
+/_/   \___/\___/\___/___/\_, /_//_/\__/
+                        /___/
+Config Description: %s
+Source: %s:%s/%s                     Destination: %s:%s/%s
+                                              :.
+                 ============================:::'.
+                 ============================::::::.
+                 ============================::::'
+                                              :'
+Truncate?: %s
+Preserve?: %s
+Disable Triggers?: %s
+Defer Constraints? %s
+No Safety? %s
+Tables: %d
+=================================================================
+`, sc.Description,
+						c.Source.Host,
+						c.Source.Port,
+						c.Source.Database,
+						c.Destination.Host,
+						c.Destination.Port,
+						c.Destination.Database,
+						strconv.FormatBool(args.Truncate),
+						strconv.FormatBool(args.Preserve),
+						strconv.FormatBool(args.DisableTriggers),
+						strconv.FormatBool(args.DeferConstraints),
+						strconv.FormatBool(args.NoSafety),
+						len(tasks),
+					)
+
+					fmt.Print("Do you want to proceed? (yes/no/more): ")
+					response, err := reader.ReadString('\n')
+					if err != nil {
+						log.Fatalf("Error reading input: %v", err)
+					}
+
+					switch strings.TrimSpace(response) {
+					case "yes":
+						fmt.Println("Starting sync")
+						goto proceed
+					case "no":
+						fmt.Println("Sync cancelled")
+						os.Exit(0)
+					case "more":
+						fmt.Printf("\nTables to sync (%d):\n", len(tasks))
+						for _, t := range tasks {
+							strategy := "upsert"
+							if t.Truncate && !t.Preserve {
+								strategy = "truncate"
+							} else if t.Preserve {
+								strategy = "preserve"
+							}
+							fmt.Printf("  %-40s [%s]\n", t.FullName(), strategy)
+						}
+						fmt.Println()
+					default:
+						log.Fatalln("Invalid input, aborting...")
+					}
+				}
+			proceed:
+			}
+
+			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

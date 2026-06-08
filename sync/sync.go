@@ -11,7 +11,7 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
 	maxConcurrency := 1 // Allowed to run at the same time
 
 	taskQueue := make(chan Task, maxConcurrency)
@@ -34,7 +34,9 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 				fmt.Println("Rollback failed:", rbErr)
 			}
 		} else {
-			fmt.Println("Committing...")
+			if !quiet {
+				fmt.Println("Committing...")
+			}
 			if cmErr := tx.Commit(ctx); cmErr != nil {
 				fmt.Println("Commit failed:", cmErr)
 			}
@@ -48,10 +50,12 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 			return err
 		}
 
-		fmt.Println("Defer Contraints")
+		if !quiet {
+			fmt.Println("Deferring constraints...")
+		}
 		err = db.DeferConstraints(ctx, tx.Conn(), ndc)
 		if err != nil {
-			fmt.Println("DeferContraints Error: ", err)
+			fmt.Println("DeferConstraints error:", err)
 			return err
 		}
 	}
@@ -74,22 +78,25 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 	for range maxConcurrency {
 		go func() {
 			for task := range taskQueue {
-				fmt.Printf("Processing Task %s: syncing...\n", task.FullName())
+				if !quiet {
+					fmt.Printf("Syncing %s...\n", task.FullName())
+				}
 				ts := NewTableSync(source, dest)
-				if taskErr := ts.Sync(ctx, &task); taskErr != nil {
+				rowCount, taskErr := ts.Sync(ctx, &task)
+				if taskErr != nil {
 					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), taskErr)
 					mu.Lock()
 					taskErrs = append(taskErrs, taskErr)
 					mu.Unlock()
+				} else if !quiet {
+					fmt.Printf("Done %s (%s rows)\n", task.FullName(), formatCount(rowCount))
 				}
-				fmt.Printf("Task Complete %s \n", task.FullName())
 				wg.Done()
 			}
 		}()
 	}
 
 	for i := range tasks {
-		fmt.Printf("Write task to queue: %s \n", tasks[i].FullName())
 		taskQueue <- tasks[i]
 	}
 
@@ -104,22 +111,39 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 	if disableTriggers {
 		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
-			fmt.Println("RestoreUserTriggers Error: ", err)
+			fmt.Println("RestoreUserTriggers error:", err)
 			return err
 		}
 	}
 
 	if deferConstraints {
-		fmt.Println("Restore Contraints")
+		if !quiet {
+			fmt.Println("Restoring constraints...")
+		}
 		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
 		if err != nil {
-			fmt.Println("RestoreContraints Error: ", err)
+			fmt.Println("RestoreConstraints error:", err)
 			return err
 		}
 	}
 
-	fmt.Println("All tasks have completed")
+	fmt.Println("Sync complete.")
 	return nil
+}
+
+func formatCount(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	s := fmt.Sprintf("%d", n)
+	out := make([]byte, 0, len(s)+(len(s)-1)/3)
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, byte(c))
+	}
+	return string(out)
 }
 
 func getTables(tasks []Task) []db.Table {
