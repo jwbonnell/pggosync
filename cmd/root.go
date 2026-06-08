@@ -54,10 +54,7 @@ func setupDatasources(c *config.UserConfig) (*datasource.ReaderDataSource, *data
 		Path:   c.Destination.Database,
 	})
 	if err != nil {
-		_, err := fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
-		if err != nil {
-			return nil, nil
-		}
+		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)
 	}
 
@@ -68,10 +65,7 @@ func setupDatasources(c *config.UserConfig) (*datasource.ReaderDataSource, *data
 		Path:   c.Source.Database,
 	})
 	if err != nil {
-		_, err := fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
-		if err != nil {
-			return nil, nil
-		}
+		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
 		os.Exit(1)
 	}
 

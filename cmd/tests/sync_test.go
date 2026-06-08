@@ -5,10 +5,18 @@ import (
 	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5"
 	"github.com/jwbonnell/pggosync/cmd"
+	"github.com/jwbonnell/pggosync/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	handler := config.UserConfigHandler{PathHandler: config.OSPathHandler{}}
+	_ = handler.InitConfig("default")
+	os.Exit(m.Run())
+}
 
 type Country struct {
 	CountryID int    `db:"country_id"`
@@ -21,13 +29,18 @@ type City struct {
 	CountryID int    `db:"country_id"`
 }
 
+// TestTruncate syncs only the root `country` table (no FK dependents) so that
+// truncate without --defer-constraints works without ordering issues.
 func TestTruncate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7777, 'Country 7777') ON CONFLICT DO NOTHING")
@@ -36,11 +49,10 @@ func TestTruncate(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "sync")
 	args = append(args, "--config", "../../_configs/default.yml")
-	args = append(args, "--group")
-	args = append(args, "country_var_1:1000")
+	args = append(args, "--table", "country")
 	args = append(args, "--truncate")
 	args = append(args, "--skip-confirmation")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 7777")
@@ -54,10 +66,10 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7777, 'Country 7777') ON CONFLICT DO NOTHING")
@@ -71,7 +83,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	args = append(args, "--truncate")
 	args = append(args, "--defer-constraints")
 	args = append(args, "--skip-confirmation")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 7777")
@@ -85,10 +97,10 @@ func TestTruncateDisableTriggers(t *testing.T) {
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (7778, 'Country 7778') ON CONFLICT DO NOTHING")
@@ -103,7 +115,7 @@ func TestTruncateDisableTriggers(t *testing.T) {
 	args = append(args, "--defer-constraints")
 	args = append(args, "--disable-triggers")
 	args = append(args, "--skip-confirmation")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 7778")
@@ -117,10 +129,10 @@ func TestSync(t *testing.T) {
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (1001, 'Country 1001 - TEST') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
@@ -131,7 +143,7 @@ func TestSync(t *testing.T) {
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group", "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 1001")
@@ -146,10 +158,10 @@ func TestSync_Preserve(t *testing.T) {
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 	_, err = db.Exec(context.Background(), "INSERT INTO country (country_id, country_name) VALUES (1001, 'Country 1001 - TEST') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
@@ -162,7 +174,7 @@ func TestSync_Preserve(t *testing.T) {
 	args = append(args, "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
 	args = append(args, "--preserve")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 1001")
@@ -177,10 +189,10 @@ func TestSync_Table(t *testing.T) {
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 
@@ -190,7 +202,7 @@ func TestSync_Table(t *testing.T) {
 	args = append(args, "--table")
 	args = append(args, "country")
 	args = append(args, "--skip-confirmation")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 1002")
@@ -205,10 +217,10 @@ func TestSync_TableMulti(t *testing.T) {
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 
@@ -220,7 +232,7 @@ func TestSync_TableMulti(t *testing.T) {
 	args = append(args, "--table")
 	args = append(args, "city")
 	args = append(args, "--skip-confirmation")
-	cmd.Execute(args)
+	cmd.Execute("test", args)
 
 	var country []Country
 	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 1002")

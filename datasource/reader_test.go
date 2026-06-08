@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetTables(t *testing.T) {
@@ -18,7 +19,7 @@ func TestGetTables(t *testing.T) {
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	tables, err := rd.GetTables(ctx)
 	assert.Nil(t, err)
@@ -26,7 +27,7 @@ func TestGetTables(t *testing.T) {
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 }
@@ -38,7 +39,7 @@ func TestGetSchemas(t *testing.T) {
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	schemas, err := rd.GetSchemas(ctx)
 	assert.Nil(t, err)
@@ -54,7 +55,7 @@ func TestGetSchemas(t *testing.T) {
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 }
@@ -66,7 +67,7 @@ func TestGetUserTriggers(t *testing.T) {
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	triggers, err := rd.GetUserTriggers(ctx)
 	assert.Nil(t, err)
@@ -75,7 +76,7 @@ func TestGetUserTriggers(t *testing.T) {
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 }
@@ -87,14 +88,14 @@ func TestStatusCheck(t *testing.T) {
 	ctx := context.Background()
 
 	rd, err := getReadDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	err = rd.StatusCheck(ctx)
 	assert.Nil(t, err)
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 }
@@ -105,7 +106,7 @@ func TestGetNonDeferrableConstraints(t *testing.T) {
 	}
 	ctx := context.Background()
 	rd, err := getReadDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	ndc, err := rd.GetNonDeferrableConstraints(ctx)
 	assert.Nil(t, err)
@@ -113,7 +114,7 @@ func TestGetNonDeferrableConstraints(t *testing.T) {
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {
-			panic(err)
+			t.Errorf("failed to close db: %v", err)
 		}
 	}()
 }

@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSeedTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	rw, err := getReadWriterDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	err = seedDummyTable(ctx, rw.DB, "dummy_seed", 30)
 	assert.Nil(t, err)
 
@@ -24,9 +28,12 @@ func TestSeedTable(t *testing.T) {
 }
 
 func TestTruncate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	rw, err := getReadWriterDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	err = seedDummyTable(ctx, rw.DB, "dummy_truncate", 30)
 	assert.Nil(t, err)
 
@@ -42,9 +49,12 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestDeleteAll(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	rw, err := getReadWriterDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	err = seedDummyTable(ctx, rw.DB, "dummy_delete", 30)
 	assert.Nil(t, err)
 
@@ -60,9 +70,12 @@ func TestDeleteAll(t *testing.T) {
 }
 
 func TestCreateTempTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	rw, err := getReadWriterDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	err = rw.CreateTempTable(ctx, "country_temp_table", "country")
 	assert.Nil(t, err)
@@ -75,9 +88,12 @@ func TestCreateTempTable(t *testing.T) {
 }
 
 func TestSetSequence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
 	ctx := context.Background()
 	rw, err := getReadWriterDataSource()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	val := r.Intn(100000-1+1) + 1

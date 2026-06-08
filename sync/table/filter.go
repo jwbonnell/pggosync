@@ -1,17 +1,17 @@
 package table
 
 import (
+	"slices"
+
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
 )
 
 func FilterTables(tables []db.Table, excluded []db.Table) []db.Table {
 	var out []db.Table
-	for _, table := range tables {
-		for _, exclude := range excluded {
-			if !table.Equal(exclude) {
-				out = append(out, table)
-			}
+	for _, t := range tables {
+		if !slices.ContainsFunc(excluded, t.Equal) {
+			out = append(out, t)
 		}
 	}
 	return out

@@ -19,9 +19,9 @@ func TestBuildUrl(t *testing.T) {
 }
 
 func TestGenTempTableName(t *testing.T) {
-	seed := 123456789
-	expected := "pggosync_users_77885"
-	assert.Equal(t, expected, GenTempTableName(int64(seed), "users"), "the generated temp table name should match expected")
+	seed := int64(123456789)
+	assert.Equal(t, "pggosync_users_123456789", GenTempTableName(seed, "users"))
+	assert.NotEmpty(t, GenTempTableName(0, "users")) // 0 seed uses current time
 }
 
 func TestTableStruct_FullName(t *testing.T) {

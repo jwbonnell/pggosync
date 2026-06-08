@@ -235,9 +235,9 @@ func (tr *TaskResolver) loadSequences(ctx context.Context) (map[string][]db.Sequ
 
 func confirmTablesExist(ds datasource.ReadDataSource, tasks []Task) error {
 	for i := range tasks {
-		if ds.TableExists(tasks[i].Table) {
-			return nil
+		if !ds.TableExists(tasks[i].Table) {
+			return fmt.Errorf("table %s does not exist in datasource %s", tasks[i].Table.FullName(), ds.GetName())
 		}
 	}
-	return fmt.Errorf("table %s does not exist in datasource %s", tasks[0].Table, ds.GetName())
+	return nil
 }

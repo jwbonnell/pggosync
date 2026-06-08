@@ -14,11 +14,13 @@ import (
 func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
 	maxConcurrency := 1 // Allowed to run at the same time
 
-	// Create a buffered channel with a capacity of maxConcurrency
 	taskQueue := make(chan Task, maxConcurrency)
-	//tables := getTables(tasks)
 
-	var wg sync.WaitGroup
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		taskErrs []error
+	)
 
 	tx, err := dest.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -28,15 +30,13 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 	defer func() {
 		if err != nil {
 			fmt.Println("Rolling back...", err)
-			err := tx.Rollback(ctx)
-			if err != nil {
-				fmt.Println("Rollback failed:", err)
+			if rbErr := tx.Rollback(ctx); rbErr != nil {
+				fmt.Println("Rollback failed:", rbErr)
 			}
 		} else {
 			fmt.Println("Committing...")
-			err := tx.Commit(ctx)
-			if err != nil {
-				fmt.Println("Commit failed:", err)
+			if cmErr := tx.Commit(ctx); cmErr != nil {
+				fmt.Println("Commit failed:", cmErr)
 			}
 		}
 	}()
@@ -76,16 +76,15 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 			for task := range taskQueue {
 				fmt.Printf("Processing Task %s: syncing...\n", task.FullName())
 				ts := NewTableSync(source, dest)
-				err = ts.Sync(ctx, &task)
-				if err != nil {
-					//TODO Update goroutines to handle error appropriately
-					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), err)
+				if taskErr := ts.Sync(ctx, &task); taskErr != nil {
+					fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", task.FullName(), taskErr)
+					mu.Lock()
+					taskErrs = append(taskErrs, taskErr)
+					mu.Unlock()
 				}
-
 				fmt.Printf("Task Complete %s \n", task.FullName())
 				wg.Done()
 			}
-
 		}()
 	}
 
@@ -96,6 +95,11 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, task
 
 	wg.Wait()
 	close(taskQueue)
+
+	if len(taskErrs) > 0 {
+		err = fmt.Errorf("%d task(s) failed; first error: %w", len(taskErrs), taskErrs[0])
+		return err
+	}
 
 	if disableTriggers {
 		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
