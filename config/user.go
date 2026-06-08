@@ -2,11 +2,11 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v3"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type PathHandler interface {
@@ -122,21 +122,18 @@ func (uc *UserConfigHandler) GetConfig(name string) (UserConfig, error) {
 		return UserConfig{}, err
 	}
 
-	var (
-		configPath string
-		config     UserConfig
-		raw        []byte
-	)
-
-	configPath = filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))
-	raw, err = os.ReadFile(configPath)
-	if err != nil && !os.IsNotExist(err) {
-		//Found a config file but could not read it
-		log.Fatal(err)
+	configPath := filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return UserConfig{}, fmt.Errorf("config %q not found; run 'pggosync init' to create it", name)
+		}
+		return UserConfig{}, fmt.Errorf("could not read config %q: %w", name, err)
 	}
 
+	var config UserConfig
 	if err = yaml.Unmarshal(raw, &config); err != nil {
-		log.Fatalf("config.GetConfig: %v", err)
+		return UserConfig{}, fmt.Errorf("invalid YAML in config %q: %w", name, err)
 	}
 
 	return config, nil

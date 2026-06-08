@@ -8,6 +8,7 @@ type CLIArgs struct {
 	NoSafety         bool
 	SkipConfirmation bool
 	Quiet            bool
+	DryRun           bool
 	SyncConfigPath   string
 	Groups           []string
 	Tables           []string

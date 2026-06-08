@@ -211,6 +211,51 @@ func TestSync_Table(t *testing.T) {
 	assert.Equal(t, "Country 1002", country[0].Name)
 }
 
+func TestDryRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
+	ctx := context.Background()
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	require.NoError(t, err)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			t.Errorf("failed to close db: %v", err)
+		}
+	}()
+
+	_, err = db.Exec(ctx, "INSERT INTO country (country_id, country_name) VALUES (8888, 'Country 8888 - DRY RUN TARGET') ON CONFLICT DO NOTHING")
+	require.NoError(t, err)
+	defer db.Exec(ctx, "DELETE FROM country WHERE country_id = 8888")
+
+	args := os.Args[0:1]
+	args = append(args, "sync")
+	args = append(args, "--config", "../../_configs/default.yml")
+	args = append(args, "--table", "country")
+	args = append(args, "--truncate")
+	args = append(args, "--dry-run")
+	args = append(args, "--skip-confirmation")
+	cmd.Execute("test", args)
+
+	// Row must still exist — dry-run should not have committed the truncate.
+	var country []Country
+	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 8888")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(country), "dry-run must not commit changes")
+}
+
+func TestValidate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
+
+	args := os.Args[0:1]
+	args = append(args, "validate")
+	args = append(args, "--config", "../../_configs/default.yml")
+	// Should exit cleanly without calling log.Fatal.
+	cmd.Execute("test", args)
+}
+
 func TestSync_TableMulti(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode...skipping integration test")

@@ -74,6 +74,11 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Aliases: []string{"q"},
 				Usage:   "Suppress per-table progress output. Only errors and the final summary are printed.",
 			},
+			&cli.BoolFlag{
+				Name:    "dry-run",
+				Aliases: []string{"dr"},
+				Usage:   "Simulate the sync without committing changes. Shows row counts per table.",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
 			initRequired(handler)
@@ -83,6 +88,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				NoSafety:         cCtx.Bool("no-safety"),
 				SkipConfirmation: cCtx.Bool("skip-confirmation"),
 				Quiet:            cCtx.Bool("quiet"),
+				DryRun:           cCtx.Bool("dry-run"),
 				DeferConstraints: cCtx.Bool("defer-constraints"),
 				DisableTriggers:  cCtx.Bool("disable-triggers"),
 				SyncConfigPath:   cCtx.String("config"),
@@ -94,12 +100,12 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 			var err error
 			c, err := handler.GetCurrentConfig()
 			if err != nil {
-				log.Fatalf("Error retrieving DB connection config: %v", err)
+				log.Fatalf("Could not load connection config: %v", err)
 			}
 
 			sc, err := config.GetSyncConfig(args.SyncConfigPath)
 			if err != nil {
-				log.Fatalf("Error retrieving sync config: %v", err)
+				log.Fatalf("%v", err)
 			}
 
 			source, destination := setupDatasources(&c)
@@ -136,6 +142,10 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 			if !args.SkipConfirmation {
 				reader := bufio.NewReader(os.Stdin)
 				for {
+					dryRunLabel := ""
+					if args.DryRun {
+						dryRunLabel = "  *** DRY RUN — no changes will be committed ***\n"
+					}
 					fmt.Printf(`
 =================================================================
    ___  __________     ____
@@ -143,7 +153,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
  / ___/ (_ / (_ / _ \_\ \/ // / _ \/ __/
 /_/   \___/\___/\___/___/\_, /_//_/\__/
                         /___/
-Config Description: %s
+%sConfig Description: %s
 Source: %s:%s/%s                     Destination: %s:%s/%s
                                               :.
                  ============================:::'.
@@ -157,7 +167,8 @@ Defer Constraints? %s
 No Safety? %s
 Tables: %d
 =================================================================
-`, sc.Description,
+`, dryRunLabel,
+						sc.Description,
 						c.Source.Host,
 						c.Source.Port,
 						c.Source.Database,
@@ -204,7 +215,7 @@ Tables: %d
 			proceed:
 			}
 
-			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, tasks, source, destination); err != nil {
+			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, tasks, source, destination); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

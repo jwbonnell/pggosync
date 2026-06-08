@@ -48,6 +48,15 @@ func TestConfigHandler_InitConfig(t *testing.T) {
 	assert.Equal(t, "5433", config.Destination.Port)
 }
 
+func TestConfigHandler_GetConfig_Missing(t *testing.T) {
+	defer cleanupTest()
+	handler := NewUserConfigHandler(TestPathHandler{})
+	_, err := handler.GetConfig("doesnotexist")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "doesnotexist")
+	assert.Contains(t, err.Error(), "pggosync init")
+}
+
 func TestConfigHandler_UpdateDefault(t *testing.T) {
 	defer cleanupTest()
 	handler := NewUserConfigHandler(TestPathHandler{})

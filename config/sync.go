@@ -1,9 +1,10 @@
 package config
 
 import (
-	"gopkg.in/yaml.v3"
-	"log"
+	"fmt"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 type SyncConfig struct {
@@ -13,19 +14,18 @@ type SyncConfig struct {
 }
 
 func GetSyncConfig(syncConfigPath string) (SyncConfig, error) {
-	var (
-		syncConfig SyncConfig
-		raw        []byte
-	)
+	var syncConfig SyncConfig
 
 	raw, err := os.ReadFile(syncConfigPath)
 	if err != nil {
-		//Found a config file but could not read it
-		log.Fatal(err)
+		if os.IsNotExist(err) {
+			return SyncConfig{}, fmt.Errorf("sync config file not found: %s", syncConfigPath)
+		}
+		return SyncConfig{}, fmt.Errorf("could not read sync config %s: %w", syncConfigPath, err)
 	}
 
 	if err = yaml.Unmarshal(raw, &syncConfig); err != nil {
-		log.Fatalf("config.GetConfig: %v", err)
+		return SyncConfig{}, fmt.Errorf("invalid YAML in sync config %s: %w", syncConfigPath, err)
 	}
 
 	return syncConfig, nil

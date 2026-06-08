@@ -23,6 +23,7 @@ func Execute(build string, args []string) {
 			versionCmd(build),
 			initCmd(&handler),
 			syncCmd(&handler),
+			validateCmd(&handler),
 			listCmd(&handler),
 			configCmd(&handler),
 		},
@@ -54,7 +55,7 @@ func setupDatasources(c *config.UserConfig) (*datasource.ReaderDataSource, *data
 		Path:   c.Destination.Database,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
+		fmt.Fprintf(os.Stderr, "Could not connect to destination database (%s:%s/%s): %v\n", c.Destination.Host, c.Destination.Port, c.Destination.Database, err)
 		os.Exit(1)
 	}
 
@@ -65,7 +66,7 @@ func setupDatasources(c *config.UserConfig) (*datasource.ReaderDataSource, *data
 		Path:   c.Source.Database,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error datasource.NewDataSource %v\n", err)
+		fmt.Fprintf(os.Stderr, "Could not connect to source database (%s:%s/%s): %v\n", c.Source.Host, c.Source.Port, c.Source.Database, err)
 		os.Exit(1)
 	}
 

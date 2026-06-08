@@ -11,7 +11,7 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
 	maxConcurrency := 1 // Allowed to run at the same time
 
 	taskQueue := make(chan Task, maxConcurrency)
@@ -30,6 +30,10 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	defer func() {
 		if err != nil {
 			fmt.Println("Rolling back...", err)
+			if rbErr := tx.Rollback(ctx); rbErr != nil {
+				fmt.Println("Rollback failed:", rbErr)
+			}
+		} else if dryRun {
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
 				fmt.Println("Rollback failed:", rbErr)
 			}
@@ -127,7 +131,11 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		}
 	}
 
-	fmt.Println("Sync complete.")
+	if dryRun {
+		fmt.Printf("Dry run complete — %d table(s) processed, no changes committed.\n", len(tasks))
+	} else {
+		fmt.Println("Sync complete.")
+	}
 	return nil
 }
 
