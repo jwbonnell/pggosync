@@ -19,14 +19,16 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 		Usage: "Sync one or more groups",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    "source",
-				Aliases: []string{"s"},
-				Usage:   "Source connection name (defaults to saved default).",
+				Name:     "source",
+				Aliases:  []string{"s"},
+				Required: true,
+				Usage:    "Source connection name.",
 			},
 			&cli.StringFlag{
-				Name:    "dest",
-				Aliases: []string{"d"},
-				Usage:   "Destination connection name (defaults to saved default).",
+				Name:     "dest",
+				Aliases:  []string{"d"},
+				Required: true,
+				Usage:    "Destination connection name.",
 			},
 			&cli.BoolFlag{
 				Name:    "truncate",

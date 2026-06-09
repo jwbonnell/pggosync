@@ -44,21 +44,8 @@ func requireConnections(handler *config.UserConfigHandler) {
 	}
 }
 
-// resolveConnections looks up the source and destination ConnectionConfig by
-// name. If either name is empty, it falls back to the saved defaults.
+// resolveConnections looks up the source and destination ConnectionConfig by name.
 func resolveConnections(handler *config.UserConfigHandler, sourceName, destName string) (config.ConnectionConfig, config.ConnectionConfig, error) {
-	if sourceName == "" || destName == "" {
-		d, err := handler.GetDefaults()
-		if err != nil {
-			return config.ConnectionConfig{}, config.ConnectionConfig{}, fmt.Errorf("no defaults set and --source/--dest not provided; run 'pggosync config default --source <name> --dest <name>'")
-		}
-		if sourceName == "" {
-			sourceName = d.Source
-		}
-		if destName == "" {
-			destName = d.Dest
-		}
-	}
 	src, err := handler.GetConnection(sourceName)
 	if err != nil {
 		return config.ConnectionConfig{}, config.ConnectionConfig{}, err

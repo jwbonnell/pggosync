@@ -39,12 +39,6 @@ type ConnectionConfig struct {
 	SSLMode  string `yaml:"sslmode,omitempty"`
 }
 
-// Defaults holds the names of the default source and destination connections.
-type Defaults struct {
-	Source string `yaml:"source"`
-	Dest   string `yaml:"dest"`
-}
-
 func (uc *UserConfigHandler) configDir() (string, error) {
 	dir, err := uc.PathHandler.UserConfigDir()
 	if err != nil {
@@ -53,17 +47,9 @@ func (uc *UserConfigHandler) configDir() (string, error) {
 	return filepath.Join(dir, "pggosync"), nil
 }
 
-// InitConnection creates a placeholder connection file and, if no defaults are
-// set yet, sets both source and destination defaults to this connection.
+// InitConnection creates a placeholder connection file.
 func (uc *UserConfigHandler) InitConnection(name string) error {
-	if err := uc.SaveConnection(name, defaultConnectionConfig(name)); err != nil {
-		return err
-	}
-	// Set as defaults only when none exist yet.
-	if _, err := uc.GetDefaults(); err != nil {
-		_ = uc.SetDefaults(name, name)
-	}
-	return nil
+	return uc.SaveConnection(name, defaultConnectionConfig(name))
 }
 
 // GetConnection loads a named connection config.
@@ -103,8 +89,7 @@ func (uc *UserConfigHandler) SaveConnection(name string, conn ConnectionConfig) 
 	return os.WriteFile(filepath.Join(dir, fmt.Sprintf("%s.yaml", name)), data, 0600)
 }
 
-// ListConnections returns the names of all saved connections (excluding the
-// reserved defaults file).
+// ListConnections returns the names of all saved connections.
 func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 	dir, err := uc.configDir()
 	if err != nil {
@@ -122,10 +107,6 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 		if f.IsDir() {
 			continue
 		}
-		// Skip the defaults file.
-		if f.Name() == "defaults.yaml" {
-			continue
-		}
 		parts := strings.SplitN(f.Name(), ".", 2)
 		if len(parts) != 2 || parts[1] != "yaml" {
 			continue
@@ -133,39 +114,6 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 		names = append(names, parts[0])
 	}
 	return names, nil
-}
-
-// GetDefaults returns the saved source/dest connection names.
-func (uc *UserConfigHandler) GetDefaults() (Defaults, error) {
-	dir, err := uc.configDir()
-	if err != nil {
-		return Defaults{}, err
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "defaults.yaml"))
-	if err != nil {
-		return Defaults{}, fmt.Errorf("no defaults set; run 'pggosync config default --source <name> --dest <name>'")
-	}
-	var d Defaults
-	if err = yaml.Unmarshal(raw, &d); err != nil {
-		return Defaults{}, fmt.Errorf("could not parse defaults file: %w", err)
-	}
-	return d, nil
-}
-
-// SetDefaults saves the default source and destination connection names.
-func (uc *UserConfigHandler) SetDefaults(source, dest string) error {
-	dir, err := uc.configDir()
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	data, err := yaml.Marshal(Defaults{Source: source, Dest: dest})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "defaults.yaml"), data, 0600)
 }
 
 func defaultConnectionConfig(name string) ConnectionConfig {

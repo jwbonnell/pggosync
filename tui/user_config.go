@@ -17,30 +17,28 @@ type userConfigPhase int
 const (
 	ucPhaseList userConfigPhase = iota
 	ucPhaseForm
-	ucPhaseSetDefault
 )
 
 type connectionListItem struct {
-	name          string
-	defaultSource bool
-	defaultDest   bool
+	name       string
+	connString string
 }
 
-func (i connectionListItem) Title() string {
-	var tags []string
-	if i.defaultSource {
-		tags = append(tags, "default source")
-	}
-	if i.defaultDest {
-		tags = append(tags, "default dest")
-	}
-	if len(tags) > 0 {
-		return fmt.Sprintf("%s  [%s]", i.name, strings.Join(tags, ", "))
-	}
-	return i.name
-}
-func (i connectionListItem) Description() string { return "Connection config" }
+func (i connectionListItem) Title() string       { return i.name }
+func (i connectionListItem) Description() string { return i.connString }
 func (i connectionListItem) FilterValue() string { return i.name }
+
+func maskedConnString(c config.ConnectionConfig) string {
+	userInfo := c.User
+	if c.Password != "" {
+		userInfo += ":***"
+	}
+	s := fmt.Sprintf("postgres://%s@%s:%d/%s", userInfo, c.Host, c.Port, c.Database)
+	if c.SSLMode != "" && c.SSLMode != "disable" {
+		s += "?sslmode=" + c.SSLMode
+	}
+	return s
+}
 
 type userConfigModel struct {
 	handler *config.UserConfigHandler
@@ -62,10 +60,6 @@ type userConfigModel struct {
 	user     string
 	password string
 	sslmode  string
-
-	// set-default form fields
-	defaultSource string
-	defaultDest   string
 }
 
 func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
@@ -79,16 +73,15 @@ func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
 
 func (m *userConfigModel) buildList() list.Model {
 	conns, _ := m.handler.ListConnections()
-	defaults, _ := m.handler.GetDefaults()
 
 	items := make([]list.Item, 0, len(conns)+1)
 	items = append(items, connectionListItem{name: "(+ New connection)"})
 	for _, c := range conns {
-		items = append(items, connectionListItem{
-			name:          c,
-			defaultSource: c == defaults.Source,
-			defaultDest:   c == defaults.Dest,
-		})
+		item := connectionListItem{name: c}
+		if conn, err := m.handler.GetConnection(c); err == nil {
+			item.connString = maskedConnString(conn)
+		}
+		items = append(items, item)
 	}
 
 	l := list.New(items, newMenuItemDelegate(), 60, 20)
@@ -124,6 +117,12 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 	nameField := huh.NewInput().
 		Title("Connection name").
 		Description("Identifier for this connection").
+		Validate(func(s string) error {
+			if strings.TrimSpace(s) == "" {
+				return fmt.Errorf("connection name is required")
+			}
+			return nil
+		}).
 		Value(&m.connName)
 	if existing != nil {
 		nameField = nameField.Placeholder(name)
@@ -155,30 +154,6 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 	)
 }
 
-func (m *userConfigModel) buildSetDefaultForm() *huh.Form {
-	conns, _ := m.handler.ListConnections()
-	options := make([]huh.Option[string], len(conns))
-	for i, c := range conns {
-		options[i] = huh.NewOption(c, c)
-	}
-	if d, err := m.handler.GetDefaults(); err == nil {
-		m.defaultSource = d.Source
-		m.defaultDest = d.Dest
-	}
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Default source").
-				Options(options...).
-				Value(&m.defaultSource),
-			huh.NewSelect[string]().
-				Title("Default destination").
-				Options(options...).
-				Value(&m.defaultDest),
-		),
-	)
-}
-
 func (m userConfigModel) Init() tea.Cmd {
 	return nil
 }
@@ -200,8 +175,6 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 				return m.handleListSelect()
 			case "n":
 				return m.openNewForm()
-			case "d":
-				return m.openSetDefaultForm()
 			}
 		} else if msg.String() == "esc" {
 			// In form phases, esc returns to the connection list.
@@ -211,15 +184,12 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 		}
 	}
 
-	if m.phase == ucPhaseForm || m.phase == ucPhaseSetDefault {
+	if m.phase == ucPhaseForm {
 		form, cmd := m.form.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.form = f
 		}
 		if m.form.State == huh.StateCompleted {
-			if m.phase == ucPhaseSetDefault {
-				return m.saveDefaults()
-			}
 			return m.saveConnection()
 		}
 		if m.form.State == huh.StateAborted {
@@ -261,12 +231,6 @@ func (m userConfigModel) openNewForm() (userConfigModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
-func (m userConfigModel) openSetDefaultForm() (userConfigModel, tea.Cmd) {
-	m.phase = ucPhaseSetDefault
-	m.form = m.buildSetDefaultForm()
-	return m, m.form.Init()
-}
-
 func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 	name := strings.TrimSpace(m.connName)
 	if name == "" && m.editingName != "" {
@@ -300,18 +264,6 @@ func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m userConfigModel) saveDefaults() (userConfigModel, tea.Cmd) {
-	if err := m.handler.SetDefaults(m.defaultSource, m.defaultDest); err != nil {
-		m.err = err.Error()
-	} else {
-		m.status = fmt.Sprintf("Defaults set — source: %s  dest: %s", m.defaultSource, m.defaultDest)
-	}
-	m.err = ""
-	m.phase = ucPhaseList
-	m.list = m.buildList()
-	return m, nil
-}
-
 func (m userConfigModel) View() string {
 	var sb strings.Builder
 	helpS := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
@@ -325,7 +277,7 @@ func (m userConfigModel) View() string {
 		if m.status != "" {
 			sb.WriteString("\n" + successStyle.Render(m.status))
 		}
-		sb.WriteString("\n" + helpS.Render("enter: edit   n: new   d: set defaults   esc: back"))
+		sb.WriteString("\n" + helpS.Render("enter: edit   n: new   esc: back"))
 
 	case ucPhaseForm:
 		sb.WriteString(wizardTitleStyle.Render("Connection Config"))
@@ -334,9 +286,6 @@ func (m userConfigModel) View() string {
 		}
 		sb.WriteString("\n" + m.form.View())
 
-	case ucPhaseSetDefault:
-		sb.WriteString(wizardTitleStyle.Render("Set Default Connections"))
-		sb.WriteString("\n" + m.form.View())
 	}
 
 	return docStyle.Render(sb.String())
