@@ -20,18 +20,6 @@ func cleanupTest() {
 	_ = os.RemoveAll("../.test-config")
 }
 
-func TestConfigHandler_SetGetDefaults(t *testing.T) {
-	defer cleanupTest()
-	handler := NewUserConfigHandler(TestPathHandler{})
-	err := handler.SetDefaults("src", "dst")
-	assert.NoError(t, err)
-
-	d, err := handler.GetDefaults()
-	assert.NoError(t, err)
-	assert.Equal(t, "src", d.Source)
-	assert.Equal(t, "dst", d.Dest)
-}
-
 func TestConfigHandler_InitConnection(t *testing.T) {
 	defer cleanupTest()
 	handler := NewUserConfigHandler(TestPathHandler{})
@@ -42,12 +30,6 @@ func TestConfigHandler_InitConnection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "localhost", conn.Host)
 	assert.Equal(t, 5432, conn.Port)
-
-	// Defaults should have been set automatically on first init.
-	d, err := handler.GetDefaults()
-	assert.NoError(t, err)
-	assert.Equal(t, "taco", d.Source)
-	assert.Equal(t, "taco", d.Dest)
 }
 
 func TestConfigHandler_GetConnection_Missing(t *testing.T) {
@@ -57,21 +39,6 @@ func TestConfigHandler_GetConnection_Missing(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "doesnotexist")
 	assert.Contains(t, err.Error(), "pggosync init")
-}
-
-func TestConfigHandler_UpdateDefaults(t *testing.T) {
-	defer cleanupTest()
-	handler := NewUserConfigHandler(TestPathHandler{})
-	err := handler.SetDefaults("a", "b")
-	assert.NoError(t, err)
-
-	err = handler.SetDefaults("updated-src", "updated-dst")
-	assert.NoError(t, err)
-
-	d, err := handler.GetDefaults()
-	assert.NoError(t, err)
-	assert.Equal(t, "updated-src", d.Source)
-	assert.Equal(t, "updated-dst", d.Dest)
 }
 
 func TestConfigHandler_ListConnections(t *testing.T) {

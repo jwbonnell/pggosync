@@ -20,7 +20,6 @@ func TestMain(m *testing.M) {
 	_ = handler.SaveConnection("dest", config.ConnectionConfig{
 		Host: "localhost", Port: 5433, Database: "postgres", User: "dest_user", Password: "dest_pw",
 	})
-	_ = handler.SetDefaults("source", "dest")
 	os.Exit(m.Run())
 }
 
@@ -54,6 +53,7 @@ func TestTruncate(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table", "country")
 	args = append(args, "--truncate")
@@ -83,6 +83,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
@@ -114,6 +115,7 @@ func TestTruncateDisableTriggers(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
@@ -146,6 +148,7 @@ func TestSync(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group", "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
@@ -175,6 +178,7 @@ func TestSync_Preserve(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1001")
@@ -204,6 +208,7 @@ func TestSync_Table(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country")
@@ -236,6 +241,7 @@ func TestDryRun(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table", "country")
 	args = append(args, "--truncate")
@@ -257,6 +263,7 @@ func TestValidate(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "validate")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	// Should exit cleanly without calling log.Fatal.
 	cmd.Execute("test", args)
@@ -277,6 +284,7 @@ func TestSync_TableMulti(t *testing.T) {
 
 	args := os.Args[0:1]
 	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country")
