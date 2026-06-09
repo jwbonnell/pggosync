@@ -32,10 +32,11 @@ func NewUserConfigHandler(pathHandler PathHandler) *UserConfigHandler {
 // ConnectionConfig holds credentials for a single database.
 type ConnectionConfig struct {
 	Host     string `yaml:"host"`
-	Port     string `yaml:"port"`
+	Port     int    `yaml:"port"`
 	Database string `yaml:"database"`
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
+	SSLMode  string `yaml:"sslmode,omitempty"`
 }
 
 // Defaults holds the names of the default source and destination connections.
@@ -122,12 +123,12 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 			continue
 		}
 		// Skip the defaults file.
-		if f.Name() == "defaults" || f.Name() == "defaults.yaml" || f.Name() == "default" {
+		if f.Name() == "defaults.yaml" {
 			continue
 		}
 		parts := strings.SplitN(f.Name(), ".", 2)
 		if len(parts) != 2 || parts[1] != "yaml" {
-			return nil, fmt.Errorf("unexpected file in config dir: %s", f.Name())
+			continue
 		}
 		names = append(names, parts[0])
 	}
@@ -140,7 +141,7 @@ func (uc *UserConfigHandler) GetDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, err
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "defaults"))
+	raw, err := os.ReadFile(filepath.Join(dir, "defaults.yaml"))
 	if err != nil {
 		return Defaults{}, fmt.Errorf("no defaults set; run 'pggosync config default --source <name> --dest <name>'")
 	}
@@ -164,13 +165,13 @@ func (uc *UserConfigHandler) SetDefaults(source, dest string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "defaults"), data, 0600)
+	return os.WriteFile(filepath.Join(dir, "defaults.yaml"), data, 0600)
 }
 
 func defaultConnectionConfig(name string) ConnectionConfig {
-	port := "5432"
+	port := 5432
 	if name == "dest" || name == "destination" || name == "local" {
-		port = "5433"
+		port = 5433
 	}
 	return ConnectionConfig{
 		Host:     "localhost",
@@ -178,5 +179,6 @@ func defaultConnectionConfig(name string) ConnectionConfig {
 		Database: "postgres",
 		User:     name + "_user",
 		Password: "",
+		SSLMode:  "disable",
 	}
 }

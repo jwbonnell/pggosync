@@ -419,8 +419,8 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	m.err = ""
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("  Source:      %s  (%s:%s/%s)\n", m.selectedSource, srcConn.Host, srcConn.Port, srcConn.Database))
-	sb.WriteString(fmt.Sprintf("  Destination: %s  (%s:%s/%s)\n", m.selectedDest, dstConn.Host, dstConn.Port, dstConn.Database))
+	sb.WriteString(fmt.Sprintf("  Source:      %s  (%s:%d/%s)\n", m.selectedSource, srcConn.Host, srcConn.Port, srcConn.Database))
+	sb.WriteString(fmt.Sprintf("  Destination: %s  (%s:%d/%s)\n", m.selectedDest, dstConn.Host, dstConn.Port, dstConn.Database))
 	sb.WriteString(fmt.Sprintf("  Sync config: %s\n", m.syncConfigPath))
 	sb.WriteString("\n")
 	sb.WriteString(strategyLine(m.options))
@@ -549,25 +549,34 @@ func unwrapPipeErr(err error) error {
 
 func setupWizardDatasources(src, dst *config.ConnectionConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource, error) {
 	dest, err := datasource.NewReadWriteDataSource("destination", url.URL{
-		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%s", dst.Host, dst.Port),
-		User:   url.UserPassword(dst.User, dst.Password),
-		Path:   dst.Database,
+		Scheme:   "postgres",
+		Host:     fmt.Sprintf("%s:%d", dst.Host, dst.Port),
+		User:     url.UserPassword(dst.User, dst.Password),
+		Path:     dst.Database,
+		RawQuery: sslmodeQuery(dst.SSLMode),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("destination: %w", err)
 	}
 	source, err := datasource.NewReadDataSource("source", url.URL{
-		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%s", src.Host, src.Port),
-		User:   url.UserPassword(src.User, src.Password),
-		Path:   src.Database,
+		Scheme:   "postgres",
+		Host:     fmt.Sprintf("%s:%d", src.Host, src.Port),
+		User:     url.UserPassword(src.User, src.Password),
+		Path:     src.Database,
+		RawQuery: sslmodeQuery(src.SSLMode),
 	})
 	if err != nil {
 		_ = dest.DB.Close(context.Background())
 		return nil, nil, fmt.Errorf("source: %w", err)
 	}
 	return source, dest, nil
+}
+
+func sslmodeQuery(mode string) string {
+	if mode == "" {
+		return ""
+	}
+	return "sslmode=" + url.QueryEscape(mode)
 }
 
 // ── View ───────────────────────────────────────────────────────────────────────

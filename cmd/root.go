@@ -72,26 +72,35 @@ func resolveConnections(handler *config.UserConfigHandler, sourceName, destName 
 
 func setupDatasources(src, dst *config.ConnectionConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
 	destination, err := datasource.NewReadWriteDataSource("destination", url.URL{
-		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%s", dst.Host, dst.Port),
-		User:   url.UserPassword(dst.User, dst.Password),
-		Path:   dst.Database,
+		Scheme:   "postgres",
+		Host:     fmt.Sprintf("%s:%d", dst.Host, dst.Port),
+		User:     url.UserPassword(dst.User, dst.Password),
+		Path:     dst.Database,
+		RawQuery: sslmodeQuery(dst.SSLMode),
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not connect to destination (%s:%s/%s): %v\n", dst.Host, dst.Port, dst.Database, err)
+		fmt.Fprintf(os.Stderr, "Could not connect to destination (%s:%d/%s): %v\n", dst.Host, dst.Port, dst.Database, err)
 		os.Exit(1)
 	}
 
 	source, err := datasource.NewReadDataSource("source", url.URL{
-		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%s", src.Host, src.Port),
-		User:   url.UserPassword(src.User, src.Password),
-		Path:   src.Database,
+		Scheme:   "postgres",
+		Host:     fmt.Sprintf("%s:%d", src.Host, src.Port),
+		User:     url.UserPassword(src.User, src.Password),
+		Path:     src.Database,
+		RawQuery: sslmodeQuery(src.SSLMode),
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not connect to source (%s:%s/%s): %v\n", src.Host, src.Port, src.Database, err)
+		fmt.Fprintf(os.Stderr, "Could not connect to source (%s:%d/%s): %v\n", src.Host, src.Port, src.Database, err)
 		os.Exit(1)
 	}
 
 	return source, destination
+}
+
+func sslmodeQuery(mode string) string {
+	if mode == "" {
+		return ""
+	}
+	return "sslmode=" + url.QueryEscape(mode)
 }

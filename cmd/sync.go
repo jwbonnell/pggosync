@@ -170,7 +170,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 /_/   \___/\___/\___/___/\_, /_//_/\__/
                         /___/
 %sConfig Description: %s
-Source: %s:%s/%s                     Destination: %s:%s/%s
+Source: %s:%d/%s                     Destination: %s:%d/%s
                                               :.
                  ============================:::'.
                  ============================::::::.

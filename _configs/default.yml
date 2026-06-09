@@ -5,17 +5,28 @@ exclude:
 
 groups:
   country:
-    city: "where country_id = 10"
-    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
-    country: "where country_id = 10"
+    tables:
+      - table: city
+        filter: "country_id = 10"
+      - table: store
+        filter: "city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
+      - table: country
+        filter: "country_id = 10"
 
   country_var_1:
-    city: "where country_id = {1}"
-    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = {1})"
-    country: "where country_id = {1}"
+    tables:
+      - table: city
+        filter: "country_id = {1}"
+      - table: store
+        filter: "city_id IN (SELECT city_id FROM city WHERE country_id = {1})"
+      - table: country
+        filter: "country_id = {1}"
 
   country_preserve:
-    city: "where country_id = 10"
-    store: "where city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
-    country: "where country_id = 10"
-    
+    tables:
+      - table: city
+        filter: "country_id = 10"
+      - table: store
+        filter: "city_id IN (SELECT city_id FROM city WHERE country_id = 10)"
+      - table: country
+        filter: "country_id = 10"

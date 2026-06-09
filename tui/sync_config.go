@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/jwbonnell/pggosync/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,9 +22,14 @@ const (
 	scPhaseDone
 )
 
+type syncConfigTable struct {
+	name   string
+	filter string
+}
+
 type syncConfigGroup struct {
 	name   string
-	tables map[string]string // table -> filter
+	tables []syncConfigTable
 }
 
 type syncConfigBuilderModel struct {
@@ -94,7 +100,7 @@ func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 				Value(&m.pendingTableName),
 			huh.NewInput().
 				Title("Filter (optional)").
-				Description("WHERE clause, e.g. WHERE country_id = {1}").
+				Description("SQL predicate, e.g. country_id = {1}").
 				Value(&m.pendingFilter),
 			huh.NewConfirm().
 				Title("Add another table to this group?").
@@ -200,7 +206,7 @@ func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {
 			m.form = m.buildAddGroupForm()
 			return m, m.form.Init()
 		}
-		m.groups = append(m.groups, syncConfigGroup{name: name, tables: map[string]string{}})
+		m.groups = append(m.groups, syncConfigGroup{name: name})
 		m.err = ""
 		m.phase = scPhaseAddTable
 		m.form = m.buildAddTableForm()
@@ -215,7 +221,10 @@ func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {
 		}
 		m.err = ""
 		lastGroup := &m.groups[len(m.groups)-1]
-		lastGroup.tables[tableName] = strings.TrimSpace(m.pendingFilter)
+		lastGroup.tables = append(lastGroup.tables, syncConfigTable{
+			name:   tableName,
+			filter: strings.TrimSpace(m.pendingFilter),
+		})
 		if m.addAnotherTable {
 			m.form = m.buildAddTableForm()
 			return m, m.form.Init()
@@ -257,17 +266,21 @@ func (m syncConfigBuilderModel) writeYAML() (syncConfigBuilderModel, tea.Cmd) {
 	}
 
 	// Build groups map
-	groups := map[string]map[string]string{}
+	groups := map[string]config.Group{}
 	for _, g := range m.groups {
 		if len(g.tables) > 0 {
-			groups[g.name] = g.tables
+			var entries []config.TableEntry
+			for _, t := range g.tables {
+				entries = append(entries, config.TableEntry{Table: t.name, Filter: t.filter})
+			}
+			groups[g.name] = config.Group{Tables: entries}
 		}
 	}
 
 	type syncConfigYAML struct {
-		Description string                       `yaml:"description,omitempty"`
-		Exclude     []string                     `yaml:"exclude,omitempty"`
-		Groups      map[string]map[string]string `yaml:"groups,omitempty"`
+		Description string                  `yaml:"description,omitempty"`
+		Exclude     []string                `yaml:"exclude,omitempty"`
+		Groups      map[string]config.Group `yaml:"groups,omitempty"`
 	}
 
 	out := syncConfigYAML{

@@ -41,7 +41,7 @@ func TestConfigHandler_InitConnection(t *testing.T) {
 	conn, err := handler.GetConnection("taco")
 	assert.NoError(t, err)
 	assert.Equal(t, "localhost", conn.Host)
-	assert.Equal(t, "5432", conn.Port)
+	assert.Equal(t, 5432, conn.Port)
 
 	// Defaults should have been set automatically on first init.
 	d, err := handler.GetDefaults()

@@ -31,9 +31,9 @@ func TestParseTableArg(t *testing.T) {
 	}{
 		{"city", "public|city|"},
 		{"public.city:234", "public|city|234"},
-		{"city:WHERE test = 'asdf'", "public|city|WHERE test = 'asdf'"},
+		{"city:test = 'asdf'", "public|city|test = 'asdf'"},
 		{"other.country", "other|country|"},
-		{"other.country:\"WHERE test = 'zxcv'\"", "other|country|WHERE test = 'zxcv'"},
+		{"other.country:\"test = 'zxcv'\"", "other|country|test = 'zxcv'"},
 	}
 
 	for _, test := range tests {

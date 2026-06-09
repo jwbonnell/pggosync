@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/opts"
@@ -15,7 +16,7 @@ import (
 type TaskResolver struct {
 	source           *datasource.ReaderDataSource
 	destination      *datasource.ReadWriteDatasource
-	groups           map[string]map[string]string
+	groups           map[string]config.Group
 	truncate         bool
 	preserve         bool
 	deferConstraints bool
@@ -23,7 +24,7 @@ type TaskResolver struct {
 	excluded         []db.Table
 }
 
-func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]map[string]string, truncate bool, preserve bool, deferConstraints bool, disableTriggers bool, excluded []db.Table) *TaskResolver {
+func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]config.Group, truncate bool, preserve bool, deferConstraints bool, disableTriggers bool, excluded []db.Table) *TaskResolver {
 	return &TaskResolver{
 		source:           source,
 		destination:      destination,
@@ -149,23 +150,32 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 	}
 
 	var tasks []Task
-	for tkey, filter := range group {
-		schema, tab, err := opts.ParseFullTableName(tkey)
+	for _, entry := range group.Tables {
+		schema, tab, err := opts.ParseFullTableName(entry.Table)
 		if err != nil {
 			return nil, err
 		}
 
-		filter = opts.ApplyParamToFilter(params, filter)
+		filter := opts.ApplyParamToFilter(params, entry.Filter)
+
+		truncate := tr.truncate
+		if entry.Truncate != nil {
+			truncate = *entry.Truncate
+		}
+		preserve := tr.preserve
+		if entry.Preserve != nil {
+			preserve = *entry.Preserve
+		}
 
 		tasks = append(tasks, Task{
 			Table:            db.Table{Schema: schema, Name: tab},
 			Filter:           filter,
-			Preserve:         tr.preserve,
-			Truncate:         tr.truncate,
+			Preserve:         preserve,
+			Truncate:         truncate,
 			DeferConstraints: tr.deferConstraints,
 		})
 	}
-	return tasks, nil //--table users:"WHERE something" or
+	return tasks, nil
 }
 
 func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Task, error) {

@@ -34,8 +34,12 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 				task := &tasks[i]
 				cols := task.GetSharedColumnNames()
+				filterClause := ""
+				if task.Filter != "" {
+					filterClause = "WHERE " + task.Filter
+				}
 				query := fmt.Sprintf("COPY (SELECT %s FROM %s %s) TO STDOUT",
-					strings.Join(cols, ","), task.FullName(), task.Filter)
+					strings.Join(cols, ","), task.FullName(), filterClause)
 
 				pgConn, err := source.NewPgConn(ctx)
 				if err != nil {

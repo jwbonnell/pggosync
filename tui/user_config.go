@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -60,6 +61,7 @@ type userConfigModel struct {
 	database string
 	user     string
 	password string
+	sslmode  string
 
 	// set-default form fields
 	defaultSource string
@@ -102,10 +104,14 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 	if existing != nil {
 		m.connName = name
 		m.host = existing.Host
-		m.port = existing.Port
+		m.port = strconv.Itoa(existing.Port)
 		m.database = existing.Database
 		m.user = existing.User
 		m.password = existing.Password
+		m.sslmode = existing.SSLMode
+		if m.sslmode == "" {
+			m.sslmode = "disable"
+		}
 	} else {
 		m.connName = ""
 		m.host = "localhost"
@@ -113,6 +119,7 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 		m.database = "postgres"
 		m.user = ""
 		m.password = ""
+		m.sslmode = "disable"
 	}
 	nameField := huh.NewInput().
 		Title("Connection name").
@@ -125,10 +132,25 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 		huh.NewGroup(
 			nameField,
 			huh.NewInput().Title("Host").Value(&m.host),
-			huh.NewInput().Title("Port").Value(&m.port),
+			huh.NewInput().Title("Port").Value(&m.port).Validate(func(s string) error {
+				p, err := strconv.Atoi(strings.TrimSpace(s))
+				if err != nil || p < 1 || p > 65535 {
+					return fmt.Errorf("must be a number between 1 and 65535")
+				}
+				return nil
+			}),
 			huh.NewInput().Title("Database").Value(&m.database),
 			huh.NewInput().Title("User").Value(&m.user),
 			huh.NewInput().Title("Password").EchoMode(huh.EchoModePassword).Value(&m.password),
+			huh.NewSelect[string]().
+				Title("SSL mode").
+				Options(
+					huh.NewOption("disable", "disable"),
+					huh.NewOption("prefer", "prefer"),
+					huh.NewOption("require", "require"),
+					huh.NewOption("verify-full", "verify-full"),
+				).
+				Value(&m.sslmode),
 		),
 	)
 }
@@ -256,12 +278,14 @@ func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 		m.form = m.buildConnectionForm("", nil)
 		return m, m.form.Init()
 	}
+	port, _ := strconv.Atoi(strings.TrimSpace(m.port))
 	conn := config.ConnectionConfig{
 		Host:     m.host,
-		Port:     m.port,
+		Port:     port,
 		Database: m.database,
 		User:     m.user,
 		Password: m.password,
+		SSLMode:  m.sslmode,
 	}
 	if err := m.handler.SaveConnection(name, conn); err != nil {
 		m.err = err.Error()

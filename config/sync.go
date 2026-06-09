@@ -7,10 +7,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type TableEntry struct {
+	Table    string `yaml:"table"`
+	Filter   string `yaml:"filter,omitempty"`
+	Truncate *bool  `yaml:"truncate,omitempty"`
+	Preserve *bool  `yaml:"preserve,omitempty"`
+}
+
+type Group struct {
+	Tables []TableEntry `yaml:"tables"`
+}
+
 type SyncConfig struct {
-	Description string                       `yaml:"description"`
-	Exclude     []string                     `yaml:"exclude"`
-	Groups      map[string]map[string]string `yaml:"groups"`
+	Description string           `yaml:"description"`
+	Exclude     []string         `yaml:"exclude"`
+	Groups      map[string]Group `yaml:"groups"`
 }
 
 func GetSyncConfig(syncConfigPath string) (SyncConfig, error) {
