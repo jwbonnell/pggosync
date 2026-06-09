@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 
@@ -31,7 +30,8 @@ func Execute(build string, args []string) {
 	}
 
 	if err := app.Run(args); err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
 	}
 }
 

@@ -13,7 +13,20 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) error {
+// TableResult holds per-table sync outcome.
+type TableResult struct {
+	Table    string
+	Rows     int64
+	Strategy string
+	Err      error
+}
+
+// SyncResult is returned by Sync and carries per-table stats.
+type SyncResult struct {
+	Tables []TableResult
+}
+
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (SyncResult, error) {
 	bufs := make([]*SafeBuffer, len(tasks))
 	for i := range bufs {
 		bufs[i] = NewSafeBuffer(&bytes.Buffer{})
@@ -58,9 +71,11 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		}
 	}()
 
+	var result SyncResult
+
 	tx, err := dest.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return result, err
 	}
 
 	defer func() {
@@ -87,7 +102,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	if deferConstraints {
 		ndc, err = dest.GetNonDeferrableConstraints(ctx)
 		if err != nil {
-			return err
+			return result, err
 		}
 
 		if !quiet {
@@ -96,7 +111,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		err = db.DeferConstraints(ctx, tx.Conn(), ndc)
 		if err != nil {
 			fmt.Fprintln(out, "DeferConstraints error:", err)
-			return err
+			return result, err
 		}
 	}
 
@@ -104,13 +119,13 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	if disableTriggers {
 		triggers, err = dest.GetUserTriggers(ctx)
 		if err != nil {
-			return err
+			return result, err
 		}
 
 		err := db.DisableUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
 			fmt.Fprintln(out, "DisableUserTriggers Error: ", err)
-			return err
+			return result, err
 		}
 	}
 
@@ -123,7 +138,14 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 			fmt.Fprintf(out, "Syncing %s...\n", tasks[i].FullName())
 		}
 
+		strategy := taskStrategy(&tasks[i])
 		rowCount, taskErr := ts.SyncFromBuffer(ctx, &tasks[i], bufs[i])
+		result.Tables = append(result.Tables, TableResult{
+			Table:    tasks[i].FullName(),
+			Rows:     rowCount,
+			Strategy: strategy,
+			Err:      taskErr,
+		})
 		if taskErr != nil {
 			fmt.Fprintf(out, "Task failed %s: %v\n", tasks[i].FullName(), taskErr)
 			taskErrs = append(taskErrs, taskErr)
@@ -136,14 +158,14 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	if len(taskErrs) > 0 {
 		err = fmt.Errorf("%d task(s) failed; first error: %w", len(taskErrs), taskErrs[0])
-		return err
+		return result, err
 	}
 
 	if disableTriggers {
 		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
 			fmt.Fprintln(out, "RestoreUserTriggers error:", err)
-			return err
+			return result, err
 		}
 	}
 
@@ -154,7 +176,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
 		if err != nil {
 			fmt.Fprintln(out, "RestoreConstraints error:", err)
-			return err
+			return result, err
 		}
 	}
 
@@ -163,7 +185,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	} else {
 		fmt.Fprintln(out, "Sync complete.")
 	}
-	return nil
+	return result, nil
 }
 
 func FormatCount(n int64) string {
@@ -179,6 +201,16 @@ func FormatCount(n int64) string {
 		out = append(out, byte(c))
 	}
 	return string(out)
+}
+
+func taskStrategy(t *Task) string {
+	if t.Truncate && !t.Preserve {
+		return "truncate"
+	}
+	if t.Preserve {
+		return "preserve"
+	}
+	return "upsert"
 }
 
 func getTables(tasks []Task) []db.Table {

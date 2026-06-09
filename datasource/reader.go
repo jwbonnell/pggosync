@@ -251,6 +251,15 @@ func (r *ReaderDataSource) GetSequences(ctx context.Context) ([]db.Sequence, err
 	return sequences, nil
 }
 
+func (r *ReaderDataSource) GetSequenceValue(ctx context.Context, schema, sequence string) (int64, error) {
+	var value int64
+	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT last_value FROM %s.%s", schema, sequence)).Scan(&value)
+	if err != nil {
+		return 0, fmt.Errorf("GetSequenceValue %s.%s: %w", schema, sequence, err)
+	}
+	return value, nil
+}
+
 func (r *ReaderDataSource) GetRowCount(ctx context.Context, tableName string) (int64, error) {
 	var count int64
 	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)

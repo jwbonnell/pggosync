@@ -3,7 +3,6 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -102,7 +101,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 
 			srcConn, dstConn, err := resolveConnections(handler, cCtx.String("source"), cCtx.String("dest"))
 			if err != nil {
-				log.Fatalf("Could not resolve connections: %v", err)
+				return fmt.Errorf("could not resolve connections: %w", err)
 			}
 
 			args := opts.CLIArgs{
@@ -123,21 +122,17 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 
 			sc, err := config.GetSyncConfig(args.SyncConfigPath)
 			if err != nil {
-				log.Fatalf("%v", err)
+				return err
 			}
 
 			source, destination := setupDatasources(&srcConn, &dstConn)
 			defer func() {
-				if err := source.DB.Close(cCtx.Context); err != nil {
-					log.Fatalf("Error closing source DB: %v", err)
-				}
-				if err := destination.DB.Close(cCtx.Context); err != nil {
-					log.Fatalf("Error closing destination DB: %v", err)
-				}
+				_ = source.DB.Close(cCtx.Context)
+				_ = destination.DB.Close(cCtx.Context)
 			}()
 
 			if !args.NoSafety && !destination.IsLocalHost(cCtx.Context) {
-				log.Fatalf("Destination host is not localhost or 127.0.0.1, pass --no-safety to override this")
+				return fmt.Errorf("destination host %q is not localhost or 127.0.0.1 — pass --no-safety to override", dstConn.Host)
 			}
 
 			var excluded []string
@@ -146,13 +141,13 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 			}
 			excludedTables, err := opts.ProcessExcludedArgs(excluded)
 			if err != nil {
-				log.Fatalf("Failed to process excluded flag: %v", err)
+				return fmt.Errorf("failed to process --exclude: %w", err)
 			}
 
 			resolver := sync.NewTaskResolver(source, destination, sc.Groups, args.Truncate, args.Preserve, args.DeferConstraints, args.DisableTriggers, excludedTables)
 			tasks, err := resolver.Resolve(cCtx.Context, args.Groups, args.Tables)
 			if err != nil {
-				log.Fatalf("TaskResolver.Resolve: %v", err)
+				return err
 			}
 
 			if !args.SkipConfirmation {
@@ -198,7 +193,7 @@ Tables: %d
 					fmt.Print("Do you want to proceed? (yes/no/more): ")
 					response, err := reader.ReadString('\n')
 					if err != nil {
-						log.Fatalf("Error reading input: %v", err)
+						return fmt.Errorf("error reading input: %w", err)
 					}
 
 					switch strings.TrimSpace(response) {
@@ -207,7 +202,7 @@ Tables: %d
 						goto proceed
 					case "no":
 						fmt.Println("Sync cancelled")
-						os.Exit(0)
+						return nil
 					case "more":
 						fmt.Printf("\nTables to sync (%d):\n", len(tasks))
 						for _, t := range tasks {
@@ -225,14 +220,14 @@ Tables: %d
 						}
 						fmt.Println()
 					default:
-						log.Fatalln("Invalid input, aborting...")
+						return fmt.Errorf("invalid input %q — expected yes, no, or more", strings.TrimSpace(response))
 					}
 				}
 			proceed:
 			}
 
-			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, tasks, source, destination, os.Stdout); err != nil {
-				log.Fatalf("sync.Sync: %v", err)
+			if _, err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, tasks, source, destination, os.Stdout); err != nil {
+				return err
 			}
 
 			return nil

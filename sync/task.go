@@ -1,9 +1,14 @@
 package sync
 
 import (
-	"github.com/jwbonnell/pggosync/db"
 	"slices"
+	"strings"
+
+	"github.com/jwbonnell/pggosync/db"
 )
+
+// systemColumns are PostgreSQL internal columns that must never be included in COPY.
+var systemColumns = []string{"ctid", "xmin", "xmax", "cmin", "cmax", "tableoid", "oid"}
 
 type Task struct {
 	db.Table
@@ -25,6 +30,20 @@ func (t *Task) GetDestPKs() []string {
 		s = append(s, t.DestPK[i].Column)
 	}
 	return s
+}
+
+// ScrubColumns filters out PostgreSQL system columns that must not appear in COPY.
+// Reserved SQL keywords are already quoted by GetColumns; this is a safety net for
+// system columns that should never be copied regardless of their quoting.
+func (t *Task) ScrubColumns(cols []string) []string {
+	result := make([]string, 0, len(cols))
+	for _, c := range cols {
+		bare := strings.Trim(c, `"`)
+		if !slices.Contains(systemColumns, bare) {
+			result = append(result, c)
+		}
+	}
+	return result
 }
 
 func (t *Task) GetSharedColumnNames() []string {

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/opts"
@@ -62,18 +61,18 @@ func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 
 			srcConn, dstConn, err := resolveConnections(handler, cCtx.String("source"), cCtx.String("dest"))
 			if err != nil {
-				log.Fatalf("Could not resolve connections: %v", err)
+				return fmt.Errorf("could not resolve connections: %w", err)
 			}
 
 			sc, err := config.GetSyncConfig(cCtx.String("config"))
 			if err != nil {
-				log.Fatalf("%v", err)
+				return err
 			}
 
 			source, destination := setupDatasources(&srcConn, &dstConn)
 			defer func() {
-				source.DB.Close(cCtx.Context)
-				destination.DB.Close(cCtx.Context)
+				_ = source.DB.Close(cCtx.Context)
+				_ = destination.DB.Close(cCtx.Context)
 			}()
 
 			var excluded []string
@@ -84,7 +83,7 @@ func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 			}
 			excludedTables, err := opts.ProcessExcludedArgs(excluded)
 			if err != nil {
-				log.Fatalf("Failed to process excluded flag: %v", err)
+				return fmt.Errorf("failed to process --exclude: %w", err)
 			}
 
 			truncate := cCtx.Bool("truncate")
@@ -92,7 +91,7 @@ func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 			resolver := sync.NewTaskResolver(source, destination, sc.Groups, truncate, preserve, false, false, excludedTables)
 			tasks, err := resolver.Resolve(cCtx.Context, cCtx.StringSlice("group"), cCtx.StringSlice("table"))
 			if err != nil {
-				log.Fatalf("Validation failed: %v", err)
+				return err
 			}
 
 			fmt.Printf("Config OK — %d table(s) would be synced:\n", len(tasks))

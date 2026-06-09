@@ -73,19 +73,25 @@ type syncWizardModel struct {
 	previewContent string
 
 	// Phase 7 (running)
-	outputLines []string
-	runViewport viewport.Model
-	syncErr     error
-	syncDone    bool
-	startTime   time.Time
-	syncReader  *bufio.Reader
+	outputLines  []string
+	runViewport  viewport.Model
+	syncErr      error
+	syncDone     bool
+	startTime    time.Time
+	syncReader   *bufio.Reader
+	cancelSync   context.CancelFunc
+	syncResultCh chan sync.SyncResult
 
 	// Phase 8 (results)
-	elapsed time.Duration
+	elapsed    time.Duration
+	syncResult sync.SyncResult
 }
 
 type syncLineMsg string
-type syncDoneMsg struct{ err error }
+type syncDoneMsg struct {
+	err    error
+	result sync.SyncResult
+}
 
 func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 	s := spinner.New()
@@ -242,7 +248,11 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 				return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
 			}
 		case phaseRunning:
-			// no key handling during sync
+			if msg.String() == "q" || msg.String() == "ctrl+c" {
+				if m.cancelSync != nil {
+					m.cancelSync()
+				}
+			}
 		default:
 			// Form phases: intercept esc before huh consumes it.
 			if msg.String() == "esc" {
@@ -254,11 +264,12 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		m.outputLines = append(m.outputLines, string(msg))
 		m.runViewport.SetContent(strings.Join(m.outputLines, ""))
 		m.runViewport.GotoBottom()
-		return m, readSyncLine(m.syncReader)
+		return m, readSyncLine(m.syncReader, m.syncResultCh)
 
 	case syncDoneMsg:
 		m.syncDone = true
 		m.syncErr = msg.err
+		m.syncResult = msg.result
 		m.elapsed = time.Since(m.startTime)
 		m.phase = phaseResults
 		return m, nil
@@ -500,17 +511,24 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 		return m, nil
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelSync = cancel
+
+	resultCh := make(chan sync.SyncResult, 1)
+	m.syncResultCh = resultCh
+
 	pr, pw := io.Pipe()
 	reader := bufio.NewReader(pr)
 	m.syncReader = reader
 
 	go func() {
+		defer cancel()
 		defer func() {
 			_ = source.DB.Close(context.Background())
 			_ = dest.DB.Close(context.Background())
 		}()
-		err := sync.Sync(
-			context.Background(),
+		result, err := sync.Sync(
+			ctx,
 			m.options.deferConstraints,
 			m.options.disableTriggers,
 			false,
@@ -521,22 +539,24 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 			dest,
 			pw,
 		)
+		resultCh <- result
 		_ = pw.CloseWithError(err)
 	}()
 
-	return m, tea.Batch(m.spinner.Tick, readSyncLine(reader))
+	return m, tea.Batch(m.spinner.Tick, readSyncLine(reader, resultCh))
 }
 
-func readSyncLine(r *bufio.Reader) tea.Cmd {
+func readSyncLine(r *bufio.Reader, resultCh <-chan sync.SyncResult) tea.Cmd {
 	return func() tea.Msg {
 		line, err := r.ReadString('\n')
 		if len(line) > 0 {
 			return syncLineMsg(line)
 		}
 		if err != nil {
-			return syncDoneMsg{err: unwrapPipeErr(err)}
+			result := <-resultCh
+			return syncDoneMsg{err: unwrapPipeErr(err), result: result}
 		}
-		return readSyncLine(r)()
+		return readSyncLine(r, resultCh)()
 	}
 }
 
@@ -643,6 +663,8 @@ func (m syncWizardModel) View() string {
 		sb.WriteString(wizardTitleStyle.Render(fmt.Sprintf("%s %s...", m.spinner.View(), label)))
 		sb.WriteString("\n")
 		sb.WriteString(borderStyle.Render(m.runViewport.View()))
+		sb.WriteString("\n")
+		sb.WriteString(helpStyle.Render("q: cancel sync"))
 
 	case phaseResults:
 		if m.syncErr != nil {
@@ -653,7 +675,19 @@ func (m syncWizardModel) View() string {
 			sb.WriteString(successStyle.Render("Sync complete"))
 		}
 		sb.WriteString(fmt.Sprintf("  (%d tables, %s)\n\n", len(m.tasks), m.elapsed.Round(time.Millisecond)))
-		sb.WriteString(borderStyle.Render(strings.Join(m.outputLines, "")))
+		if len(m.syncResult.Tables) > 0 {
+			var stats strings.Builder
+			stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", "Table", "Strategy", "Rows"))
+			stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", strings.Repeat("─", 40), strings.Repeat("─", 9), strings.Repeat("─", 10)))
+			for _, tr := range m.syncResult.Tables {
+				if tr.Err != nil {
+					stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", tr.Table, tr.Strategy, errorStyle.Render("FAILED: "+tr.Err.Error())))
+				} else {
+					stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", tr.Table, tr.Strategy, sync.FormatCount(tr.Rows)))
+				}
+			}
+			sb.WriteString(borderStyle.Render(stats.String()))
+		}
 		sb.WriteString("\n")
 		sb.WriteString(helpStyle.Render("r: run again   esc/q: main menu"))
 	}

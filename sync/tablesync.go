@@ -29,7 +29,7 @@ func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWrit
 // separate goroutine writing into buf.
 func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reader) (int64, error) {
 	sharedColumns := task.GetSharedColumnNames()
-	scrubbedColumns := sharedColumns[:] ///TODO implement scrubbing
+	scrubbedColumns := task.ScrubColumns(sharedColumns)
 
 	if !task.Truncate || task.Preserve {
 		if len(task.DestPK) == 0 {
@@ -64,7 +64,11 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 		if err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action); err != nil {
 			return 0, fmt.Errorf("TableSync.InsertFromTempTable %w", err)
 		}
-		return cftag.RowsAffected(), nil
+		rows := cftag.RowsAffected()
+		if err := t.syncSequences(ctx, task); err != nil {
+			return rows, err
+		}
+		return rows, nil
 
 	} else {
 		if task.DeferConstraints {
@@ -82,6 +86,24 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 		if err != nil {
 			return 0, fmt.Errorf("CopyFrom %w", err)
 		}
-		return cftag.RowsAffected(), nil
+		rows := cftag.RowsAffected()
+		if err := t.syncSequences(ctx, task); err != nil {
+			return rows, err
+		}
+		return rows, nil
 	}
+}
+
+func (t *TableSync) syncSequences(ctx context.Context, task *Task) error {
+	for _, seq := range task.SourceSequences {
+		val, err := t.source.GetSequenceValue(ctx, seq.SequenceSchema, seq.Sequence)
+		if err != nil {
+			return fmt.Errorf("syncSequences read %s.%s: %w", seq.SequenceSchema, seq.Sequence, err)
+		}
+		qualifiedName := fmt.Sprintf("%s.%s", seq.SequenceSchema, seq.Sequence)
+		if err := t.destination.SetSequence(ctx, qualifiedName, int(val)); err != nil {
+			return fmt.Errorf("syncSequences set %s: %w", qualifiedName, err)
+		}
+	}
+	return nil
 }
