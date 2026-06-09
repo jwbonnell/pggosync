@@ -2,14 +2,15 @@ package tests
 
 import (
 	"context"
+	"os"
+	"testing"
+
 	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5"
 	"github.com/jwbonnell/pggosync/cmd"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 func TestMain(m *testing.M) {

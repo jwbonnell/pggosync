@@ -1,9 +1,10 @@
 package opts
 
 import (
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestApplyParamToFilter(t *testing.T) {

@@ -70,28 +70,28 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 		}
 		return rows, nil
 
-	} else {
-		if task.DeferConstraints {
-			if err := t.destination.DeleteAll(ctx, task.Table.FullName()); err != nil {
-				return 0, fmt.Errorf("TableSync DeleteAll %w", err)
-			}
-		} else {
-			if err := t.destination.Truncate(ctx, task.Table.FullName()); err != nil {
-				return 0, fmt.Errorf("TableSync Truncate %w", err)
-			}
-		}
-
-		dconn := t.destination.DB.PgConn()
-		cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", task.Table.FullName(), strings.Join(scrubbedColumns, ",")))
-		if err != nil {
-			return 0, fmt.Errorf("CopyFrom %w", err)
-		}
-		rows := cftag.RowsAffected()
-		if err := t.syncSequences(ctx, task); err != nil {
-			return rows, err
-		}
-		return rows, nil
 	}
+
+	if task.DeferConstraints {
+		if err := t.destination.DeleteAll(ctx, task.Table.FullName()); err != nil {
+			return 0, fmt.Errorf("TableSync DeleteAll %w", err)
+		}
+	} else {
+		if err := t.destination.Truncate(ctx, task.Table.FullName()); err != nil {
+			return 0, fmt.Errorf("TableSync Truncate %w", err)
+		}
+	}
+
+	dconn := t.destination.DB.PgConn()
+	cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", task.Table.FullName(), strings.Join(scrubbedColumns, ",")))
+	if err != nil {
+		return 0, fmt.Errorf("CopyFrom %w", err)
+	}
+	rows := cftag.RowsAffected()
+	if err := t.syncSequences(ctx, task); err != nil {
+		return rows, err
+	}
+	return rows, nil
 }
 
 func (t *TableSync) syncSequences(ctx context.Context, task *Task) error {

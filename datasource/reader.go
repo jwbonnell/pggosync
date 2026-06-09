@@ -200,7 +200,6 @@ func (r *ReaderDataSource) GetColumns(ctx context.Context) ([]db.Column, error) 
 	return cols, nil
 }
 
-// TODO handle pk order for multi column pks
 func (r *ReaderDataSource) GetPrimaryKeys(ctx context.Context) ([]db.PrimaryKey, error) {
 	var pks []db.PrimaryKey
 	err := pgxscan.Select(ctx, r.DB, &pks, `

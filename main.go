@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/jwbonnell/pggosync/cmd"
 	"os"
+
+	"github.com/jwbonnell/pggosync/cmd"
 )
 
 var build = "development"

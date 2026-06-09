@@ -1,9 +1,10 @@
 package table
 
 import (
+	"testing"
+
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 var allTables = []db.Table{

@@ -561,7 +561,7 @@ func readSyncLine(r *bufio.Reader, resultCh <-chan sync.SyncResult) tea.Cmd {
 }
 
 func unwrapPipeErr(err error) error {
-	if err == io.EOF || err == io.ErrClosedPipe {
+	if err == io.EOF || errors.Is(err, io.ErrClosedPipe) {
 		return nil
 	}
 	return err
