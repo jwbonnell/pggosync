@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
+	"github.com/jwbonnell/pggosync/tui"
 	"github.com/urfave/cli/v2"
 	"log"
 	"net/url"
@@ -16,8 +17,7 @@ func Execute(build string, args []string) {
 	}
 	app := &cli.App{
 		Action: func(cCtx *cli.Context) error {
-			fmt.Println("BASE ACTION TODO")
-			return nil
+			return tui.Run(&handler)
 		},
 		Commands: []*cli.Command{
 			versionCmd(build),

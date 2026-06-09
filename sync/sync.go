@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"sync"
 
@@ -13,7 +13,7 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) error {
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) error {
 	bufs := make([]*SafeBuffer, len(tasks))
 	for i := range bufs {
 		bufs[i] = NewSafeBuffer(&bytes.Buffer{})
@@ -61,20 +61,20 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	defer func() {
 		if err != nil {
-			fmt.Println("Rolling back...", err)
+			fmt.Fprintln(out, "Rolling back...", err)
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
-				fmt.Println("Rollback failed:", rbErr)
+				fmt.Fprintln(out, "Rollback failed:", rbErr)
 			}
 		} else if dryRun {
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
-				fmt.Println("Rollback failed:", rbErr)
+				fmt.Fprintln(out, "Rollback failed:", rbErr)
 			}
 		} else {
 			if !quiet {
-				fmt.Println("Committing...")
+				fmt.Fprintln(out, "Committing...")
 			}
 			if cmErr := tx.Commit(ctx); cmErr != nil {
-				fmt.Println("Commit failed:", cmErr)
+				fmt.Fprintln(out, "Commit failed:", cmErr)
 			}
 		}
 	}()
@@ -87,11 +87,11 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		}
 
 		if !quiet {
-			fmt.Println("Deferring constraints...")
+			fmt.Fprintln(out, "Deferring constraints...")
 		}
 		err = db.DeferConstraints(ctx, tx.Conn(), ndc)
 		if err != nil {
-			fmt.Println("DeferConstraints error:", err)
+			fmt.Fprintln(out, "DeferConstraints error:", err)
 			return err
 		}
 	}
@@ -105,7 +105,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 		err := db.DisableUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
-			fmt.Println("DisableUserTriggers Error: ", err)
+			fmt.Fprintln(out, "DisableUserTriggers Error: ", err)
 			return err
 		}
 	}
@@ -116,15 +116,15 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	for i := range tasks {
 		if !quiet {
-			fmt.Printf("Syncing %s...\n", tasks[i].FullName())
+			fmt.Fprintf(out, "Syncing %s...\n", tasks[i].FullName())
 		}
 
 		rowCount, taskErr := ts.SyncFromBuffer(ctx, &tasks[i], bufs[i])
 		if taskErr != nil {
-			fmt.Fprintf(os.Stderr, "Task failed %s: %v\n", tasks[i].FullName(), taskErr)
+			fmt.Fprintf(out, "Task failed %s: %v\n", tasks[i].FullName(), taskErr)
 			taskErrs = append(taskErrs, taskErr)
 		} else if !quiet {
-			fmt.Printf("Done %s (%s rows)\n", tasks[i].FullName(), FormatCount(rowCount))
+			fmt.Fprintf(out, "Done %s (%s rows)\n", tasks[i].FullName(), FormatCount(rowCount))
 		}
 	}
 
@@ -138,26 +138,26 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	if disableTriggers {
 		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
-			fmt.Println("RestoreUserTriggers error:", err)
+			fmt.Fprintln(out, "RestoreUserTriggers error:", err)
 			return err
 		}
 	}
 
 	if deferConstraints {
 		if !quiet {
-			fmt.Println("Restoring constraints...")
+			fmt.Fprintln(out, "Restoring constraints...")
 		}
 		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
 		if err != nil {
-			fmt.Println("RestoreConstraints error:", err)
+			fmt.Fprintln(out, "RestoreConstraints error:", err)
 			return err
 		}
 	}
 
 	if dryRun {
-		fmt.Printf("Dry run complete — %d table(s) processed, no changes committed.\n", len(tasks))
+		fmt.Fprintf(out, "Dry run complete — %d table(s) processed, no changes committed.\n", len(tasks))
 	} else {
-		fmt.Println("Sync complete.")
+		fmt.Fprintln(out, "Sync complete.")
 	}
 	return nil
 }

@@ -88,6 +88,10 @@ func (uc *UserConfigHandler) SetDefault(def string) error {
 	return nil
 }
 
+func (uc *UserConfigHandler) SaveConfig(name string, configYaml UserConfig) error {
+	return uc.saveConfig(name, configYaml)
+}
+
 func (uc *UserConfigHandler) saveConfig(name string, configYaml UserConfig) error {
 	dir, err := uc.PathHandler.UserConfigDir()
 	configPath := filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))

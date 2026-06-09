@@ -227,7 +227,7 @@ Tables: %d
 			proceed:
 			}
 
-			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, tasks, source, destination); err != nil {
+			if err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, tasks, source, destination, os.Stdout); err != nil {
 				log.Fatalf("sync.Sync: %v", err)
 			}
 

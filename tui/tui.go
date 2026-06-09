@@ -1,0 +1,116 @@
+package tui
+
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jwbonnell/pggosync/config"
+)
+
+type screen int
+
+const (
+	menuScreen screen = iota
+	syncWizardScreen
+	userConfigScreen
+	syncConfigScreen
+)
+
+type model struct {
+	screen     screen
+	menu       menuModel
+	syncWizard syncWizardModel
+	userConfig userConfigModel
+	syncConfig syncConfigBuilderModel
+	handler    *config.UserConfigHandler
+	width      int
+	height     int
+}
+
+type switchScreenMsg struct {
+	screen screen
+}
+
+func Run(handler *config.UserConfigHandler) error {
+	m := model{
+		screen:     menuScreen,
+		menu:       newMenuModel(),
+		syncWizard: newSyncWizardModel(handler),
+		userConfig: newUserConfigModel(handler),
+		syncConfig: newSyncConfigModel(),
+		handler:    handler,
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
+func (m model) Init() tea.Cmd {
+	return m.menu.Init()
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		var cmd tea.Cmd
+		switch m.screen {
+		case menuScreen:
+			m.menu, cmd = m.menu.Update(msg)
+		case syncWizardScreen:
+			m.syncWizard, cmd = m.syncWizard.Update(msg)
+		case userConfigScreen:
+			m.userConfig, cmd = m.userConfig.Update(msg)
+		case syncConfigScreen:
+			m.syncConfig, cmd = m.syncConfig.Update(msg)
+		}
+		return m, cmd
+
+	case switchScreenMsg:
+		m.screen = msg.screen
+		switch msg.screen {
+		case menuScreen:
+			m.menu = newMenuModel()
+			return m, m.menu.Init()
+		case syncWizardScreen:
+			m.syncWizard = newSyncWizardModel(m.handler)
+			return m, m.syncWizard.Init()
+		case userConfigScreen:
+			m.userConfig = newUserConfigModel(m.handler)
+			return m, m.userConfig.Init()
+		case syncConfigScreen:
+			m.syncConfig = newSyncConfigModel()
+			return m, m.syncConfig.Init()
+		}
+
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	switch m.screen {
+	case menuScreen:
+		m.menu, cmd = m.menu.Update(msg)
+	case syncWizardScreen:
+		m.syncWizard, cmd = m.syncWizard.Update(msg)
+	case userConfigScreen:
+		m.userConfig, cmd = m.userConfig.Update(msg)
+	case syncConfigScreen:
+		m.syncConfig, cmd = m.syncConfig.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m model) View() string {
+	switch m.screen {
+	case syncWizardScreen:
+		return m.syncWizard.View()
+	case userConfigScreen:
+		return m.userConfig.View()
+	case syncConfigScreen:
+		return m.syncConfig.View()
+	default:
+		return m.menu.View()
+	}
+}
