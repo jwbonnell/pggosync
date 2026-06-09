@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/jwbonnell/pggosync/config"
 )
 
 var (
@@ -16,6 +19,8 @@ var (
 			Padding(0, 1)
 
 	docStyle = lipgloss.NewStyle().Margin(1, 2)
+
+	lastSyncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 type menuItem struct {
@@ -60,11 +65,12 @@ func (d menuDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type menuModel struct {
-	list list.Model
+	list      list.Model
+	lastEntry *config.SyncHistoryEntry
 }
 
-// newMenuModel creates the main menu with its three navigation items.
-func newMenuModel() menuModel {
+// newMenuModel creates the main menu with its three navigation items and an optional last-sync summary.
+func newMenuModel(lastEntry *config.SyncHistoryEntry) menuModel {
 	items := []list.Item{
 		menuItem{
 			title:       "Run Sync",
@@ -90,7 +96,7 @@ func newMenuModel() menuModel {
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(true)
 
-	return menuModel{list: l}
+	return menuModel{list: l, lastEntry: lastEntry}
 }
 
 // Init satisfies tea.Model; the menu list needs no initial command.
@@ -123,7 +129,44 @@ func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 	return m, cmd
 }
 
-// View renders the menu list with document-style margins.
+// View renders the menu list with document-style margins and an optional last-sync summary line.
 func (m menuModel) View() string {
-	return docStyle.Render(strings.TrimRight(m.list.View(), "\n"))
+	content := strings.TrimRight(m.list.View(), "\n")
+	if m.lastEntry != nil {
+		content += "\n\n" + lastSyncStyle.Render(formatLastSync(m.lastEntry))
+	}
+	return docStyle.Render(content)
+}
+
+func formatLastSync(e *config.SyncHistoryEntry) string {
+	status := fmt.Sprintf("%d tables · %s rows", len(e.Tables), formatRowCount(e.TotalRows))
+	if e.Error != "" {
+		status = "failed: " + e.Error
+	}
+	return fmt.Sprintf("Last sync: %s · %s → %s · %s", formatElapsed(e.Timestamp), e.Source, e.Dest, status)
+}
+
+func formatElapsed(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+func formatRowCount(n int64) string {
+	switch {
+	case n < 1_000:
+		return fmt.Sprintf("%d", n)
+	case n < 1_000_000:
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
 }

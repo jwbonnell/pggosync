@@ -279,6 +279,9 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		m.syncResult = msg.result
 		m.elapsed = time.Since(m.startTime)
 		m.phase = phaseResults
+		if !m.options.dryRun {
+			_ = m.handler.SaveSyncHistory(m.buildHistoryEntry(msg.err, msg.result))
+		}
 		return m, nil
 
 	case spinner.TickMsg:
@@ -616,6 +619,37 @@ func sslmodeQuery(mode string) string {
 		return ""
 	}
 	return "sslmode=" + url.QueryEscape(mode)
+}
+
+// buildHistoryEntry converts the completed sync result into a config.SyncHistoryEntry for persistence.
+func (m syncWizardModel) buildHistoryEntry(syncErr error, result sync.SyncResult) config.SyncHistoryEntry {
+	tables := make([]config.TableHistoryEntry, len(result.Tables))
+	var totalRows int64
+	for i, tr := range result.Tables {
+		e := config.TableHistoryEntry{
+			Table:    tr.Table,
+			Rows:     tr.Rows,
+			Strategy: tr.Strategy,
+		}
+		if tr.Err != nil {
+			e.Error = tr.Err.Error()
+		}
+		tables[i] = e
+		totalRows += tr.Rows
+	}
+	entry := config.SyncHistoryEntry{
+		Timestamp:  time.Now(),
+		Source:     m.selectedSource,
+		Dest:       m.selectedDest,
+		ConfigFile: m.syncConfigPath,
+		Tables:     tables,
+		TotalRows:  totalRows,
+		DryRun:     m.options.dryRun,
+	}
+	if syncErr != nil {
+		entry.Error = syncErr.Error()
+	}
+	return entry
 }
 
 // ── View ───────────────────────────────────────────────────────────────────────

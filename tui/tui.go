@@ -33,7 +33,7 @@ type switchScreenMsg struct {
 func Run(handler *config.UserConfigHandler) error {
 	m := model{
 		screen:     menuScreen,
-		menu:       newMenuModel(),
+		menu:       newMenuModel(lastSyncEntry(handler)),
 		syncWizard: newSyncWizardModel(handler),
 		userConfig: newUserConfigModel(handler),
 		syncConfig: newSyncConfigModel(),
@@ -42,6 +42,16 @@ func Run(handler *config.UserConfigHandler) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// lastSyncEntry loads the most recent history entry, returning nil if none exists or on error.
+func lastSyncEntry(handler *config.UserConfigHandler) *config.SyncHistoryEntry {
+	h, err := handler.LoadSyncHistory()
+	if err != nil || len(h.Entries) == 0 {
+		return nil
+	}
+	e := h.Entries[len(h.Entries)-1]
+	return &e
 }
 
 // Init delegates to the menu's Init so the list renders immediately.
@@ -72,7 +82,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = msg.screen
 		switch msg.screen {
 		case menuScreen:
-			m.menu = newMenuModel()
+			m.menu = newMenuModel(lastSyncEntry(m.handler))
 			return m, m.menu.Init()
 		case syncWizardScreen:
 			m.syncWizard = newSyncWizardModel(m.handler)
