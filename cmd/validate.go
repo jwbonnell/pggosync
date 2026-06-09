@@ -16,6 +16,16 @@ func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 		Usage: "Validate a sync config against both databases without syncing",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
+				Name:    "source",
+				Aliases: []string{"s"},
+				Usage:   "Source connection name (defaults to saved default).",
+			},
+			&cli.StringFlag{
+				Name:    "dest",
+				Aliases: []string{"d"},
+				Usage:   "Destination connection name (defaults to saved default).",
+			},
+			&cli.StringFlag{
 				Name:     "config",
 				Aliases:  []string{"c"},
 				Required: true,
@@ -48,11 +58,11 @@ func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 			},
 		},
 		Action: func(cCtx *cli.Context) error {
-			initRequired(handler)
+			requireConnections(handler)
 
-			c, err := handler.GetCurrentConfig()
+			srcConn, dstConn, err := resolveConnections(handler, cCtx.String("source"), cCtx.String("dest"))
 			if err != nil {
-				log.Fatalf("Could not load connection config: %v", err)
+				log.Fatalf("Could not resolve connections: %v", err)
 			}
 
 			sc, err := config.GetSyncConfig(cCtx.String("config"))
@@ -60,7 +70,7 @@ func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 				log.Fatalf("%v", err)
 			}
 
-			source, destination := setupDatasources(&c)
+			source, destination := setupDatasources(&srcConn, &dstConn)
 			defer func() {
 				source.DB.Close(cCtx.Context)
 				destination.DB.Close(cCtx.Context)

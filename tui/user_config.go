@@ -16,26 +16,30 @@ type userConfigPhase int
 const (
 	ucPhaseList userConfigPhase = iota
 	ucPhaseForm
+	ucPhaseSetDefault
 )
 
-type configListItem struct {
-	name   string
-	active bool
+type connectionListItem struct {
+	name          string
+	defaultSource bool
+	defaultDest   bool
 }
 
-func (i configListItem) Title() string {
-	if i.active {
-		return i.name + " (active)"
+func (i connectionListItem) Title() string {
+	var tags []string
+	if i.defaultSource {
+		tags = append(tags, "default source")
+	}
+	if i.defaultDest {
+		tags = append(tags, "default dest")
+	}
+	if len(tags) > 0 {
+		return fmt.Sprintf("%s  [%s]", i.name, strings.Join(tags, ", "))
 	}
 	return i.name
 }
-func (i configListItem) Description() string {
-	if i.active {
-		return "Currently selected connection config"
-	}
-	return "Connection config"
-}
-func (i configListItem) FilterValue() string { return i.name }
+func (i connectionListItem) Description() string { return "Connection config" }
+func (i connectionListItem) FilterValue() string { return i.name }
 
 type userConfigModel struct {
 	handler *config.UserConfigHandler
@@ -47,23 +51,19 @@ type userConfigModel struct {
 	err     string
 	status  string
 
-	// form fields
 	editingName string
-	formConn    formDBConnections
-}
 
-type formDBConnections struct {
-	srcHost string
-	srcPort string
-	srcDB   string
-	srcUser string
-	srcPass string
-	dstHost string
-	dstPort string
-	dstDB   string
-	dstUser string
-	dstPass string
-	cfgName string
+	// flat form fields
+	connName string
+	host     string
+	port     string
+	database string
+	user     string
+	password string
+
+	// set-default form fields
+	defaultSource string
+	defaultDest   string
 }
 
 func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
@@ -76,17 +76,21 @@ func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
 }
 
 func (m *userConfigModel) buildList() list.Model {
-	configs, _ := m.handler.ListConfigs()
-	activeConfig, _ := m.handler.GetDefault()
+	conns, _ := m.handler.ListConnections()
+	defaults, _ := m.handler.GetDefaults()
 
-	items := make([]list.Item, 0, len(configs)+1)
-	items = append(items, configListItem{name: "(+ New config)", active: false})
-	for _, c := range configs {
-		items = append(items, configListItem{name: c, active: c == activeConfig})
+	items := make([]list.Item, 0, len(conns)+1)
+	items = append(items, connectionListItem{name: "(+ New connection)"})
+	for _, c := range conns {
+		items = append(items, connectionListItem{
+			name:          c,
+			defaultSource: c == defaults.Source,
+			defaultDest:   c == defaults.Dest,
+		})
 	}
 
 	l := list.New(items, newMenuItemDelegate(), 60, 20)
-	l.Title = "Connection Configs"
+	l.Title = "Connections"
 	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
@@ -94,61 +98,62 @@ func (m *userConfigModel) buildList() list.Model {
 	return l
 }
 
-func (m *userConfigModel) buildForm(name string, existing *config.UserConfig) *huh.Form {
-	conn := formDBConnections{
-		cfgName: name,
-	}
+func (m *userConfigModel) buildConnectionForm(name string, existing *config.ConnectionConfig) *huh.Form {
 	if existing != nil {
-		conn.srcHost = existing.Source.Host
-		conn.srcPort = existing.Source.Port
-		conn.srcDB = existing.Source.Database
-		conn.srcUser = existing.Source.User
-		conn.srcPass = existing.Source.Password
-		conn.dstHost = existing.Destination.Host
-		conn.dstPort = existing.Destination.Port
-		conn.dstDB = existing.Destination.Database
-		conn.dstUser = existing.Destination.User
-		conn.dstPass = existing.Destination.Password
+		m.connName = name
+		m.host = existing.Host
+		m.port = existing.Port
+		m.database = existing.Database
+		m.user = existing.User
+		m.password = existing.Password
 	} else {
-		conn.srcHost = "localhost"
-		conn.srcPort = "5432"
-		conn.srcDB = "postgres"
-		conn.srcUser = "source_user"
-		conn.srcPass = ""
-		conn.dstHost = "localhost"
-		conn.dstPort = "5433"
-		conn.dstDB = "postgres"
-		conn.dstUser = "dest_user"
-		conn.dstPass = ""
+		m.connName = ""
+		m.host = "localhost"
+		m.port = "5432"
+		m.database = "postgres"
+		m.user = ""
+		m.password = ""
 	}
-	m.formConn = conn
-
 	nameField := huh.NewInput().
-		Title("Config name").
-		Description("Identifier for this connection config").
-		Value(&m.formConn.cfgName)
+		Title("Connection name").
+		Description("Identifier for this connection").
+		Value(&m.connName)
 	if existing != nil {
 		nameField = nameField.Placeholder(name)
 	}
-
 	return huh.NewForm(
 		huh.NewGroup(
 			nameField,
-		).Title("Config"),
+			huh.NewInput().Title("Host").Value(&m.host),
+			huh.NewInput().Title("Port").Value(&m.port),
+			huh.NewInput().Title("Database").Value(&m.database),
+			huh.NewInput().Title("User").Value(&m.user),
+			huh.NewInput().Title("Password").EchoMode(huh.EchoModePassword).Value(&m.password),
+		),
+	)
+}
+
+func (m *userConfigModel) buildSetDefaultForm() *huh.Form {
+	conns, _ := m.handler.ListConnections()
+	options := make([]huh.Option[string], len(conns))
+	for i, c := range conns {
+		options[i] = huh.NewOption(c, c)
+	}
+	if d, err := m.handler.GetDefaults(); err == nil {
+		m.defaultSource = d.Source
+		m.defaultDest = d.Dest
+	}
+	return huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("Source host").Value(&m.formConn.srcHost),
-			huh.NewInput().Title("Source port").Value(&m.formConn.srcPort),
-			huh.NewInput().Title("Source database").Value(&m.formConn.srcDB),
-			huh.NewInput().Title("Source user").Value(&m.formConn.srcUser),
-			huh.NewInput().Title("Source password").EchoMode(huh.EchoModePassword).Value(&m.formConn.srcPass),
-		).Title("Source Database"),
-		huh.NewGroup(
-			huh.NewInput().Title("Destination host").Value(&m.formConn.dstHost),
-			huh.NewInput().Title("Destination port").Value(&m.formConn.dstPort),
-			huh.NewInput().Title("Destination database").Value(&m.formConn.dstDB),
-			huh.NewInput().Title("Destination user").Value(&m.formConn.dstUser),
-			huh.NewInput().Title("Destination password").EchoMode(huh.EchoModePassword).Value(&m.formConn.dstPass),
-		).Title("Destination Database"),
+			huh.NewSelect[string]().
+				Title("Default source").
+				Options(options...).
+				Value(&m.defaultSource),
+			huh.NewSelect[string]().
+				Title("Default destination").
+				Options(options...).
+				Value(&m.defaultDest),
+		),
 	)
 }
 
@@ -173,19 +178,27 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 				return m.handleListSelect()
 			case "n":
 				return m.openNewForm()
-			case "s":
-				return m.setDefaultFromList()
+			case "d":
+				return m.openSetDefaultForm()
 			}
+		} else if msg.String() == "esc" {
+			// In form phases, esc returns to the connection list.
+			m.phase = ucPhaseList
+			m.list = m.buildList()
+			return m, nil
 		}
 	}
 
-	if m.phase == ucPhaseForm {
+	if m.phase == ucPhaseForm || m.phase == ucPhaseSetDefault {
 		form, cmd := m.form.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.form = f
 		}
 		if m.form.State == huh.StateCompleted {
-			return m.saveForm()
+			if m.phase == ucPhaseSetDefault {
+				return m.saveDefaults()
+			}
+			return m.saveConnection()
 		}
 		if m.form.State == huh.StateAborted {
 			m.phase = ucPhaseList
@@ -201,83 +214,75 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 }
 
 func (m userConfigModel) handleListSelect() (userConfigModel, tea.Cmd) {
-	item, ok := m.list.SelectedItem().(configListItem)
+	item, ok := m.list.SelectedItem().(connectionListItem)
 	if !ok {
 		return m, nil
 	}
-	if item.name == "(+ New config)" {
+	if item.name == "(+ New connection)" {
 		return m.openNewForm()
 	}
-	// Edit existing
-	existing, err := m.handler.GetConfig(item.name)
+	existing, err := m.handler.GetConnection(item.name)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
 	m.editingName = item.name
 	m.phase = ucPhaseForm
-	m.form = m.buildForm(item.name, &existing)
+	m.form = m.buildConnectionForm(item.name, &existing)
 	return m, m.form.Init()
 }
 
 func (m userConfigModel) openNewForm() (userConfigModel, tea.Cmd) {
 	m.editingName = ""
 	m.phase = ucPhaseForm
-	m.form = m.buildForm("", nil)
+	m.form = m.buildConnectionForm("", nil)
 	return m, m.form.Init()
 }
 
-func (m userConfigModel) setDefaultFromList() (userConfigModel, tea.Cmd) {
-	item, ok := m.list.SelectedItem().(configListItem)
-	if !ok || item.name == "(+ New config)" {
-		return m, nil
-	}
-	if err := m.handler.SetDefault(item.name); err != nil {
-		m.err = err.Error()
-	} else {
-		m.status = fmt.Sprintf("Active config set to %q", item.name)
-	}
-	m.list = m.buildList()
-	return m, nil
+func (m userConfigModel) openSetDefaultForm() (userConfigModel, tea.Cmd) {
+	m.phase = ucPhaseSetDefault
+	m.form = m.buildSetDefaultForm()
+	return m, m.form.Init()
 }
 
-func (m userConfigModel) saveForm() (userConfigModel, tea.Cmd) {
-	name := strings.TrimSpace(m.formConn.cfgName)
+func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
+	name := strings.TrimSpace(m.connName)
 	if name == "" && m.editingName != "" {
 		name = m.editingName
 	}
 	if name == "" {
-		m.err = "Config name cannot be empty"
+		m.err = "Connection name cannot be empty"
 		m.phase = ucPhaseForm
-		m.form = m.buildForm("", nil)
+		m.form = m.buildConnectionForm("", nil)
 		return m, m.form.Init()
 	}
-
-	uc := config.UserConfig{
-		Source: config.DBConnection{
-			Host:     m.formConn.srcHost,
-			Port:     m.formConn.srcPort,
-			Database: m.formConn.srcDB,
-			User:     m.formConn.srcUser,
-			Password: m.formConn.srcPass,
-		},
-		Destination: config.DBConnection{
-			Host:     m.formConn.dstHost,
-			Port:     m.formConn.dstPort,
-			Database: m.formConn.dstDB,
-			User:     m.formConn.dstUser,
-			Password: m.formConn.dstPass,
-		},
+	conn := config.ConnectionConfig{
+		Host:     m.host,
+		Port:     m.port,
+		Database: m.database,
+		User:     m.user,
+		Password: m.password,
 	}
-	if err := m.handler.SaveConfig(name, uc); err != nil {
+	if err := m.handler.SaveConnection(name, conn); err != nil {
 		m.err = err.Error()
 		m.phase = ucPhaseList
 		m.list = m.buildList()
 		return m, nil
 	}
-
 	m.err = ""
-	m.status = fmt.Sprintf("Saved config %q", name)
+	m.status = fmt.Sprintf("Saved connection %q", name)
+	m.phase = ucPhaseList
+	m.list = m.buildList()
+	return m, nil
+}
+
+func (m userConfigModel) saveDefaults() (userConfigModel, tea.Cmd) {
+	if err := m.handler.SetDefaults(m.defaultSource, m.defaultDest); err != nil {
+		m.err = err.Error()
+	} else {
+		m.status = fmt.Sprintf("Defaults set — source: %s  dest: %s", m.defaultSource, m.defaultDest)
+	}
+	m.err = ""
 	m.phase = ucPhaseList
 	m.list = m.buildList()
 	return m, nil
@@ -285,7 +290,6 @@ func (m userConfigModel) saveForm() (userConfigModel, tea.Cmd) {
 
 func (m userConfigModel) View() string {
 	var sb strings.Builder
-
 	helpS := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	switch m.phase {
@@ -297,12 +301,17 @@ func (m userConfigModel) View() string {
 		if m.status != "" {
 			sb.WriteString("\n" + successStyle.Render(m.status))
 		}
-		sb.WriteString("\n" + helpS.Render("enter: edit   n: new   s: set active   esc: back"))
+		sb.WriteString("\n" + helpS.Render("enter: edit   n: new   d: set defaults   esc: back"))
+
 	case ucPhaseForm:
 		sb.WriteString(wizardTitleStyle.Render("Connection Config"))
 		if m.err != "" {
 			sb.WriteString("\n" + errorStyle.Render(m.err))
 		}
+		sb.WriteString("\n" + m.form.View())
+
+	case ucPhaseSetDefault:
+		sb.WriteString(wizardTitleStyle.Render("Set Default Connections"))
 		sb.WriteString("\n" + m.form.View())
 	}
 

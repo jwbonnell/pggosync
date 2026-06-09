@@ -29,12 +29,8 @@ func NewUserConfigHandler(pathHandler PathHandler) *UserConfigHandler {
 	}
 }
 
-type UserConfig struct {
-	Source      DBConnection `yaml:"source"`
-	Destination DBConnection `yaml:"destination"`
-}
-
-type DBConnection struct {
+// ConnectionConfig holds credentials for a single database.
+type ConnectionConfig struct {
 	Host     string `yaml:"host"`
 	Port     string `yaml:"port"`
 	Database string `yaml:"database"`
@@ -42,153 +38,145 @@ type DBConnection struct {
 	Password string `yaml:"password"`
 }
 
-func (uc *UserConfigHandler) InitConfig(name string) error {
-	if err := uc.SetDefault(name); err != nil {
-		return err
-	}
-
-	if err := uc.saveConfig(name, getInitialUserConfig()); err != nil {
-		return err
-	}
-	return nil
+// Defaults holds the names of the default source and destination connections.
+type Defaults struct {
+	Source string `yaml:"source"`
+	Dest   string `yaml:"dest"`
 }
 
-func (uc *UserConfigHandler) GetDefault() (string, error) {
-	var def string
+func (uc *UserConfigHandler) configDir() (string, error) {
 	dir, err := uc.PathHandler.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-
-	configPath := filepath.Join(dir, "pggosync", "default")
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", err
-	}
-
-	def = string(raw)
-	return def, nil
+	return filepath.Join(dir, "pggosync"), nil
 }
 
-func (uc *UserConfigHandler) SetDefault(def string) error {
-	dir, err := uc.PathHandler.UserConfigDir()
-	if err != nil {
+// InitConnection creates a placeholder connection file and, if no defaults are
+// set yet, sets both source and destination defaults to this connection.
+func (uc *UserConfigHandler) InitConnection(name string) error {
+	if err := uc.SaveConnection(name, defaultConnectionConfig(name)); err != nil {
 		return err
 	}
-
-	configPath := filepath.Join(dir, "pggosync", "default")
-	if err = os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		return err
-	}
-
-	if err = os.WriteFile(configPath, []byte(def), 0600); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (uc *UserConfigHandler) SaveConfig(name string, configYaml UserConfig) error {
-	return uc.saveConfig(name, configYaml)
-}
-
-func (uc *UserConfigHandler) saveConfig(name string, configYaml UserConfig) error {
-	dir, err := uc.PathHandler.UserConfigDir()
-	configPath := filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))
-
-	if err = os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		return err
-	}
-
-	yamlBytes, err := yaml.Marshal(configYaml)
-	if err != nil {
-		return err
-	}
-
-	if err = os.WriteFile(configPath, yamlBytes, 0600); err != nil {
-		return err
+	// Set as defaults only when none exist yet.
+	if _, err := uc.GetDefaults(); err != nil {
+		_ = uc.SetDefaults(name, name)
 	}
 	return nil
 }
 
-func (uc *UserConfigHandler) GetCurrentConfig() (UserConfig, error) {
-	def, err := uc.GetDefault()
+// GetConnection loads a named connection config.
+func (uc *UserConfigHandler) GetConnection(name string) (ConnectionConfig, error) {
+	dir, err := uc.configDir()
 	if err != nil {
-		return UserConfig{}, err
+		return ConnectionConfig{}, err
 	}
-
-	return uc.GetConfig(def)
-}
-
-func (uc *UserConfigHandler) GetConfig(name string) (UserConfig, error) {
-	dir, err := uc.PathHandler.UserConfigDir()
-	if err != nil {
-		return UserConfig{}, err
-	}
-
-	configPath := filepath.Join(dir, "pggosync", fmt.Sprintf("%s.yaml", name))
-	raw, err := os.ReadFile(configPath)
+	path := filepath.Join(dir, fmt.Sprintf("%s.yaml", name))
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return UserConfig{}, fmt.Errorf("config %q not found; run 'pggosync init' to create it", name)
+			return ConnectionConfig{}, fmt.Errorf("connection %q not found; run 'pggosync init %s' to create it", name, name)
 		}
-		return UserConfig{}, fmt.Errorf("could not read config %q: %w", name, err)
+		return ConnectionConfig{}, fmt.Errorf("could not read connection %q: %w", name, err)
 	}
-
-	var config UserConfig
-	if err = yaml.Unmarshal(raw, &config); err != nil {
-		return UserConfig{}, fmt.Errorf("invalid YAML in config %q: %w", name, err)
+	var conn ConnectionConfig
+	if err = yaml.Unmarshal(raw, &conn); err != nil {
+		return ConnectionConfig{}, fmt.Errorf("invalid YAML in connection %q: %w", name, err)
 	}
-
-	return config, nil
+	return conn, nil
 }
 
-func (uc *UserConfigHandler) ListConfigs() ([]string, error) {
-	dir, err := uc.PathHandler.UserConfigDir()
+// SaveConnection writes a connection config to disk.
+func (uc *UserConfigHandler) SaveConnection(name string, conn ConnectionConfig) error {
+	dir, err := uc.configDir()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	configPath := filepath.Join(dir, "pggosync")
-	files, err := os.ReadDir(configPath)
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(conn)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	return os.WriteFile(filepath.Join(dir, fmt.Sprintf("%s.yaml", name)), data, 0600)
+}
 
-	var configs []string
+// ListConnections returns the names of all saved connections (excluding the
+// reserved defaults file).
+func (uc *UserConfigHandler) ListConnections() ([]string, error) {
+	dir, err := uc.configDir()
+	if err != nil {
+		return nil, err
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
 	for _, f := range files {
-		if f.Name() == "default" {
+		if f.IsDir() {
 			continue
 		}
-
-		parts := strings.Split(f.Name(), ".")
-		switch {
-		case len(parts) != 2:
-			return nil, fmt.Errorf("listConfigs: invalid config file name: %s", f.Name())
-		case parts[1] != "yaml":
-			return nil, fmt.Errorf("listConfigs: invalid config file type: %s", f.Name())
-		default:
-			configs = append(configs, parts[0])
+		// Skip the defaults file.
+		if f.Name() == "defaults" || f.Name() == "defaults.yaml" || f.Name() == "default" {
+			continue
 		}
+		parts := strings.SplitN(f.Name(), ".", 2)
+		if len(parts) != 2 || parts[1] != "yaml" {
+			return nil, fmt.Errorf("unexpected file in config dir: %s", f.Name())
+		}
+		names = append(names, parts[0])
 	}
-
-	return configs, nil
+	return names, nil
 }
 
-func getInitialUserConfig() UserConfig {
-	return UserConfig{
-		Source: DBConnection{
-			Host:     "localhost",
-			Port:     "5432",
-			Database: "postgres",
-			User:     "source_user",
-			Password: "source_pw",
-		},
-		Destination: DBConnection{
-			Host:     "localhost",
-			Port:     "5433",
-			Database: "postgres",
-			User:     "dest_user",
-			Password: "dest_pw",
-		},
+// GetDefaults returns the saved source/dest connection names.
+func (uc *UserConfigHandler) GetDefaults() (Defaults, error) {
+	dir, err := uc.configDir()
+	if err != nil {
+		return Defaults{}, err
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "defaults"))
+	if err != nil {
+		return Defaults{}, fmt.Errorf("no defaults set; run 'pggosync config default --source <name> --dest <name>'")
+	}
+	var d Defaults
+	if err = yaml.Unmarshal(raw, &d); err != nil {
+		return Defaults{}, fmt.Errorf("could not parse defaults file: %w", err)
+	}
+	return d, nil
+}
+
+// SetDefaults saves the default source and destination connection names.
+func (uc *UserConfigHandler) SetDefaults(source, dest string) error {
+	dir, err := uc.configDir()
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(Defaults{Source: source, Dest: dest})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "defaults"), data, 0600)
+}
+
+func defaultConnectionConfig(name string) ConnectionConfig {
+	port := "5432"
+	if name == "dest" || name == "destination" || name == "local" {
+		port = "5433"
+	}
+	return ConnectionConfig{
+		Host:     "localhost",
+		Port:     port,
+		Database: "postgres",
+		User:     name + "_user",
+		Password: "",
 	}
 }

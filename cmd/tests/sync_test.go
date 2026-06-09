@@ -14,7 +14,13 @@ import (
 
 func TestMain(m *testing.M) {
 	handler := config.UserConfigHandler{PathHandler: config.OSPathHandler{}}
-	_ = handler.InitConfig("default")
+	_ = handler.SaveConnection("source", config.ConnectionConfig{
+		Host: "localhost", Port: "5432", Database: "postgres", User: "source_user", Password: "source_pw",
+	})
+	_ = handler.SaveConnection("dest", config.ConnectionConfig{
+		Host: "localhost", Port: "5433", Database: "postgres", User: "dest_user", Password: "dest_pw",
+	})
+	_ = handler.SetDefaults("source", "dest")
 	os.Exit(m.Run())
 }
 

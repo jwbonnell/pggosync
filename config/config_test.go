@@ -2,12 +2,12 @@ package config
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type TestPathHandler struct{}
@@ -17,82 +17,85 @@ func (t TestPathHandler) UserConfigDir() (string, error) {
 }
 
 func cleanupTest() {
-	err := os.RemoveAll("../.test-config")
-	if err != nil {
-		log.Fatalf("Failed to cleanup test: %v", err)
-	}
+	_ = os.RemoveAll("../.test-config")
 }
 
-func TestConfigHandler_SetGetDefault(t *testing.T) {
+func TestConfigHandler_SetGetDefaults(t *testing.T) {
 	defer cleanupTest()
 	handler := NewUserConfigHandler(TestPathHandler{})
-	err := handler.SetDefault("burrito")
+	err := handler.SetDefaults("src", "dst")
 	assert.NoError(t, err)
 
-	def, err := handler.GetDefault()
+	d, err := handler.GetDefaults()
 	assert.NoError(t, err)
-	assert.Equal(t, "burrito", def, "expected default value to be 'burrito'")
+	assert.Equal(t, "src", d.Source)
+	assert.Equal(t, "dst", d.Dest)
 }
 
-func TestConfigHandler_InitConfig(t *testing.T) {
+func TestConfigHandler_InitConnection(t *testing.T) {
 	defer cleanupTest()
 	handler := NewUserConfigHandler(TestPathHandler{})
-	err := handler.InitConfig("taco")
-	assert.NoError(t, err)
-	config, err := handler.GetConfig("taco")
+	err := handler.InitConnection("taco")
 	assert.NoError(t, err)
 
-	assert.Equal(t, "localhost", config.Source.Host)
-	assert.Equal(t, "5432", config.Source.Port)
-	assert.Equal(t, "localhost", config.Destination.Host)
-	assert.Equal(t, "5433", config.Destination.Port)
+	conn, err := handler.GetConnection("taco")
+	assert.NoError(t, err)
+	assert.Equal(t, "localhost", conn.Host)
+	assert.Equal(t, "5432", conn.Port)
+
+	// Defaults should have been set automatically on first init.
+	d, err := handler.GetDefaults()
+	assert.NoError(t, err)
+	assert.Equal(t, "taco", d.Source)
+	assert.Equal(t, "taco", d.Dest)
 }
 
-func TestConfigHandler_GetConfig_Missing(t *testing.T) {
+func TestConfigHandler_GetConnection_Missing(t *testing.T) {
 	defer cleanupTest()
 	handler := NewUserConfigHandler(TestPathHandler{})
-	_, err := handler.GetConfig("doesnotexist")
+	_, err := handler.GetConnection("doesnotexist")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "doesnotexist")
 	assert.Contains(t, err.Error(), "pggosync init")
 }
 
-func TestConfigHandler_UpdateDefault(t *testing.T) {
+func TestConfigHandler_UpdateDefaults(t *testing.T) {
 	defer cleanupTest()
 	handler := NewUserConfigHandler(TestPathHandler{})
-	err := handler.SetDefault("something")
+	err := handler.SetDefaults("a", "b")
 	assert.NoError(t, err)
 
-	err = handler.SetDefault("updated")
+	err = handler.SetDefaults("updated-src", "updated-dst")
 	assert.NoError(t, err)
 
-	def, err := handler.GetDefault()
+	d, err := handler.GetDefaults()
 	assert.NoError(t, err)
-	assert.Equal(t, "updated", def, "expected default value to be 'updated'")
+	assert.Equal(t, "updated-src", d.Source)
+	assert.Equal(t, "updated-dst", d.Dest)
 }
 
-func TestConfigHandler_ListConfigs(t *testing.T) {
+func TestConfigHandler_ListConnections(t *testing.T) {
 	tests := []struct {
 		name        string
-		configIDs   []string
+		connNames   []string
 		expected    []string
 		expectedErr assert.ErrorAssertionFunc
 	}{
 		{
-			name:        "single_config",
-			configIDs:   []string{"something"},
+			name:        "single_connection",
+			connNames:   []string{"something"},
 			expected:    []string{"something"},
 			expectedErr: assert.NoError,
 		},
 		{
-			name:        "no_configs",
-			configIDs:   []string{},
-			expected:    []string{},
+			name:        "no_connections",
+			connNames:   []string{},
+			expected:    nil,
 			expectedErr: assert.NoError,
 		},
 		{
-			name:        "single_config",
-			configIDs:   []string{"burrito", "enchilada", "taco"},
+			name:        "multiple_connections",
+			connNames:   []string{"burrito", "enchilada", "taco"},
 			expected:    []string{"burrito", "enchilada", "taco"},
 			expectedErr: assert.NoError,
 		},
@@ -100,26 +103,22 @@ func TestConfigHandler_ListConfigs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			defer cleanupTest()
-			handler := &UserConfigHandler{
-				PathHandler: TestPathHandler{},
-			}
+			handler := &UserConfigHandler{PathHandler: TestPathHandler{}}
 
 			dir, err := handler.PathHandler.UserConfigDir()
 			assert.NoError(t, err)
-			configPath := filepath.Join(dir, "pggosync") + "/"
-			err = os.MkdirAll(filepath.Dir(configPath), 0700)
+			err = os.MkdirAll(filepath.Join(dir, "pggosync"), 0700)
 			assert.NoError(t, err)
 
-			for i := range tt.configIDs {
-				err := handler.InitConfig(tt.configIDs[i])
+			for _, name := range tt.connNames {
+				err := handler.InitConnection(name)
 				assert.NoError(t, err)
 			}
-			got, err := handler.ListConfigs()
-			if !tt.expectedErr(t, err, fmt.Sprintf("there should be no error here")) {
+			got, err := handler.ListConnections()
+			if !tt.expectedErr(t, err, fmt.Sprintf("unexpected error")) {
 				return
 			}
-
-			assert.True(t, slices.Equal(tt.expected, got), "the listed configs should match the expected list")
+			assert.True(t, slices.Equal(tt.expected, got), "listed connections should match expected")
 		})
 	}
 }

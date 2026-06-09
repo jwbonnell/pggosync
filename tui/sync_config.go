@@ -136,6 +136,8 @@ func (m syncConfigBuilderModel) Update(msg tea.Msg) (syncConfigBuilderModel, tea
 			case "esc", "q", "enter":
 				return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
 			}
+		} else if msg.String() == "esc" {
+			return m.goBack()
 		}
 	}
 
@@ -149,7 +151,7 @@ func (m syncConfigBuilderModel) Update(msg tea.Msg) (syncConfigBuilderModel, tea
 	}
 
 	if m.form.State == huh.StateAborted {
-		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+		return m.goBack()
 	}
 
 	if m.form.State == huh.StateCompleted {
@@ -157,6 +159,30 @@ func (m syncConfigBuilderModel) Update(msg tea.Msg) (syncConfigBuilderModel, tea
 	}
 
 	return m, cmd
+}
+
+func (m syncConfigBuilderModel) goBack() (syncConfigBuilderModel, tea.Cmd) {
+	switch m.phase {
+	case scPhaseMain:
+		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+	case scPhaseAddGroup:
+		m.phase = scPhaseMain
+		m.form = m.buildMainForm()
+	case scPhaseAddTable:
+		// If the current group has no tables yet, remove it before going back.
+		if len(m.groups) > 0 && len(m.groups[len(m.groups)-1].tables) == 0 {
+			m.groups = m.groups[:len(m.groups)-1]
+		}
+		m.phase = scPhaseAddGroup
+		m.form = m.buildAddGroupForm()
+	case scPhaseSave:
+		// Return to main so the user can review description/excludes; groups are kept.
+		m.phase = scPhaseMain
+		m.form = m.buildMainForm()
+	default:
+		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+	}
+	return m, m.form.Init()
 }
 
 func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {

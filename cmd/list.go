@@ -12,7 +12,7 @@ func listCmd(handler *config.UserConfigHandler) *cli.Command {
 		Aliases: []string{"l"},
 		Usage:   "add a task to the list",
 		Action: func(cCtx *cli.Context) error {
-			initRequired(handler)
+			requireConnections(handler)
 			fmt.Println("TODO LIST TABLES")
 			return nil
 		},

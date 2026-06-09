@@ -22,7 +22,8 @@ import (
 type wizardPhase int
 
 const (
-	phasePickConfig wizardPhase = iota
+	phasePickSource wizardPhase = iota
+	phasePickDest
 	phasePickSyncFile
 	phasePickGroupsAndTables
 	phasePickOptions
@@ -50,29 +51,28 @@ type syncWizardModel struct {
 	err     string
 	spinner spinner.Model
 
-	// Phase 1
-	selectedConfig string
-	configs        []string
+	// Phases 1 & 2: individual connections
+	selectedSource string
+	selectedDest   string
 
-	// Phase 2
+	// Phase 3
 	syncConfigPath string
 	syncConfig     config.SyncConfig
 
-	// Phase 3
+	// Phase 4
 	selectedGroups []string
 	rawTableInput  string
 
-	// Phase 4
+	// Phase 5
 	options        syncOptions
 	concurrencyStr string
 
-	// Phase 5 (preview)
+	// Phase 6 (preview)
 	tasks          []sync.Task
 	preview        viewport.Model
 	previewContent string
-	confirmed      bool
 
-	// Phase 6 (running)
+	// Phase 7 (running)
 	outputLines []string
 	runViewport viewport.Model
 	syncErr     error
@@ -80,7 +80,7 @@ type syncWizardModel struct {
 	startTime   time.Time
 	syncReader  *bufio.Reader
 
-	// Phase 7 (results)
+	// Phase 8 (results)
 	elapsed time.Duration
 }
 
@@ -94,49 +94,42 @@ func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 
 	m := syncWizardModel{
 		handler:        handler,
-		phase:          phasePickConfig,
+		phase:          phasePickSource,
 		spinner:        s,
 		options:        syncOptions{concurrency: 1},
 		concurrencyStr: "1",
 	}
-	m.form = m.buildPhase1Form(nil)
+	m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
 	return m
 }
 
 func (m syncWizardModel) Init() tea.Cmd {
-	configs, _ := m.handler.ListConfigs()
-	m.configs = configs
 	return m.form.Init()
 }
 
 // ── Form builders ──────────────────────────────────────────────────────────────
 
-func (m *syncWizardModel) buildPhase1Form(configs []string) *huh.Form {
-	if configs == nil {
-		configs, _ = m.handler.ListConfigs()
-	}
-	m.configs = configs
-
-	options := make([]huh.Option[string], len(configs))
-	for i, c := range configs {
+func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *string) *huh.Form {
+	conns, _ := m.handler.ListConnections()
+	options := make([]huh.Option[string], len(conns))
+	for i, c := range conns {
 		options[i] = huh.NewOption(c, c)
 	}
 	if len(options) == 0 {
-		options = []huh.Option[string]{huh.NewOption("(no configs — run pggosync init first)", "")}
+		options = []huh.Option[string]{huh.NewOption("(none — run pggosync init first)", "")}
 	}
-
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Connection config").
-				Description("Which saved connection config should be used?").
+				Title(title).
+				Description(desc).
 				Options(options...).
-				Value(&m.selectedConfig),
+				Value(target),
 		),
 	)
 }
 
-func (m *syncWizardModel) buildPhase2Form() *huh.Form {
+func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -148,47 +141,38 @@ func (m *syncWizardModel) buildPhase2Form() *huh.Form {
 	)
 }
 
-func (m *syncWizardModel) buildPhase3Form() *huh.Form {
+func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 	groupKeys := make([]huh.Option[string], 0, len(m.syncConfig.Groups))
 	for name := range m.syncConfig.Groups {
 		groupKeys = append(groupKeys, huh.NewOption(name, name))
 	}
-
 	if len(groupKeys) > 0 {
 		return huh.NewForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Title("Groups to sync").
-					Description("Select groups from the sync config (leave empty to sync all shared tables)").
+					Description("Select groups (empty = all shared tables)").
 					Options(groupKeys...).
 					Value(&m.selectedGroups),
 				huh.NewInput().
 					Title("Additional tables").
-					Description("Comma-separated extra tables, e.g. public.users,orders (optional)").
+					Description("Comma-separated, e.g. public.users,orders (optional)").
 					Value(&m.rawTableInput),
 			),
 		)
 	}
-
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Tables to sync").
-				Description("Comma-separated tables, e.g. public.users,orders (empty = all shared tables)").
+				Description("Comma-separated (empty = all shared tables)").
 				Value(&m.rawTableInput),
 		),
 	)
 }
 
-func (m *syncWizardModel) buildPhase4Form() *huh.Form {
-	concurrencyOptions := []huh.Option[string]{
-		huh.NewOption("1", "1"),
-		huh.NewOption("2", "2"),
-		huh.NewOption("4", "4"),
-		huh.NewOption("8", "8"),
-	}
+func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	m.concurrencyStr = fmt.Sprintf("%d", m.options.concurrency)
-
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
@@ -209,12 +193,17 @@ func (m *syncWizardModel) buildPhase4Form() *huh.Form {
 				Value(&m.options.disableTriggers),
 			huh.NewSelect[string]().
 				Title("Concurrency").
-				Description("Number of source tables to pre-fetch in parallel.").
-				Options(concurrencyOptions...).
+				Description("Source tables to pre-fetch in parallel.").
+				Options(
+					huh.NewOption("1", "1"),
+					huh.NewOption("2", "2"),
+					huh.NewOption("4", "4"),
+					huh.NewOption("8", "8"),
+				).
 				Value(&m.concurrencyStr),
 			huh.NewConfirm().
 				Title("Dry run?").
-				Description("Simulate the sync without committing any changes.").
+				Description("Simulate without committing changes.").
 				Value(&m.options.dryRun),
 			huh.NewConfirm().
 				Title("Disable safety check?").
@@ -254,6 +243,11 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 			}
 		case phaseRunning:
 			// no key handling during sync
+		default:
+			// Form phases: intercept esc before huh consumes it.
+			if msg.String() == "esc" {
+				return m.goBack()
+			}
 		}
 
 	case syncLineMsg:
@@ -280,26 +274,22 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		m.preview, cmd = m.preview.Update(msg)
 		return m, cmd
 	}
-
 	if m.phase == phaseRunning {
 		var cmd tea.Cmd
 		m.runViewport, cmd = m.runViewport.Update(msg)
 		return m, cmd
 	}
 
-	// Delegate to huh form
 	form, cmd := m.form.Update(msg)
 	if f, ok := form.(*huh.Form); ok {
 		m.form = f
 	}
-
 	if m.form.State == huh.StateCompleted {
 		return m.advancePhase()
 	}
 	if m.form.State == huh.StateAborted {
-		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+		return m.goBack()
 	}
-
 	return m, cmd
 }
 
@@ -309,7 +299,7 @@ func (m syncWizardModel) handlePreviewKey(msg tea.KeyMsg) (syncWizardModel, tea.
 		return m.startSync()
 	case "esc", "b":
 		m.phase = phasePickOptions
-		m.form = m.buildPhase4Form()
+		m.form = m.buildOptionsForm()
 		return m, m.form.Init()
 	}
 	var cmd tea.Cmd
@@ -317,34 +307,60 @@ func (m syncWizardModel) handlePreviewKey(msg tea.KeyMsg) (syncWizardModel, tea.
 	return m, cmd
 }
 
+func (m syncWizardModel) goBack() (syncWizardModel, tea.Cmd) {
+	switch m.phase {
+	case phasePickSource:
+		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+	case phasePickDest:
+		m.phase = phasePickSource
+		m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
+	case phasePickSyncFile:
+		m.phase = phasePickDest
+		m.form = m.buildPickConnectionForm("Destination connection", "Which database is the sync destination?", &m.selectedDest)
+	case phasePickGroupsAndTables:
+		m.phase = phasePickSyncFile
+		m.form = m.buildSyncFileForm()
+	case phasePickOptions:
+		m.phase = phasePickGroupsAndTables
+		m.form = m.buildGroupsForm()
+	default:
+		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+	}
+	return m, m.form.Init()
+}
+
 func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 	switch m.phase {
-	case phasePickConfig:
+	case phasePickSource:
+		m.phase = phasePickDest
+		m.form = m.buildPickConnectionForm("Destination connection", "Which database is the sync destination?", &m.selectedDest)
+		return m, m.form.Init()
+
+	case phasePickDest:
 		m.phase = phasePickSyncFile
-		m.form = m.buildPhase2Form()
+		m.form = m.buildSyncFileForm()
 		return m, m.form.Init()
 
 	case phasePickSyncFile:
 		sc, err := config.GetSyncConfig(m.syncConfigPath)
 		if err != nil {
 			m.err = err.Error()
-			m.phase = phasePickSyncFile
-			m.form = m.buildPhase2Form()
+			m.form = m.buildSyncFileForm()
 			return m, m.form.Init()
 		}
 		m.syncConfig = sc
 		m.err = ""
 		m.phase = phasePickGroupsAndTables
-		m.form = m.buildPhase3Form()
+		m.form = m.buildGroupsForm()
 		return m, m.form.Init()
 
 	case phasePickGroupsAndTables:
 		m.phase = phasePickOptions
-		m.form = m.buildPhase4Form()
+		m.form = m.buildOptionsForm()
 		return m, m.form.Init()
 
 	case phasePickOptions:
-		if c, err := fmt.Sscanf(m.concurrencyStr, "%d", &m.options.concurrency); c != 1 || err != nil {
+		if _, err := fmt.Sscanf(m.concurrencyStr, "%d", &m.options.concurrency); err != nil {
 			m.options.concurrency = 1
 		}
 		return m.buildPreview()
@@ -353,14 +369,9 @@ func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 }
 
 func (m syncWizardModel) buildTableArgs() []string {
-	if m.rawTableInput == "" {
-		return nil
-	}
-	parts := strings.Split(m.rawTableInput, ",")
 	var args []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
+	for _, p := range strings.Split(m.rawTableInput, ",") {
+		if p = strings.TrimSpace(p); p != "" {
 			args = append(args, p)
 		}
 	}
@@ -368,19 +379,26 @@ func (m syncWizardModel) buildTableArgs() []string {
 }
 
 func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
-	uc, err := m.handler.GetConfig(m.selectedConfig)
+	srcConn, err := m.handler.GetConnection(m.selectedSource)
 	if err != nil {
 		m.err = err.Error()
-		m.phase = phasePickConfig
-		m.form = m.buildPhase1Form(m.configs)
+		m.phase = phasePickSource
+		m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
+		return m, m.form.Init()
+	}
+	dstConn, err := m.handler.GetConnection(m.selectedDest)
+	if err != nil {
+		m.err = err.Error()
+		m.phase = phasePickDest
+		m.form = m.buildPickConnectionForm("Destination connection", "Which database is the sync destination?", &m.selectedDest)
 		return m, m.form.Init()
 	}
 
-	source, dest, err := setupWizardDatasources(&uc)
+	source, dest, err := setupWizardDatasources(&srcConn, &dstConn)
 	if err != nil {
 		m.err = err.Error()
-		m.phase = phasePickConfig
-		m.form = m.buildPhase1Form(m.configs)
+		m.phase = phasePickSource
+		m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
 		return m, m.form.Init()
 	}
 	defer func() {
@@ -394,16 +412,15 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	if err != nil {
 		m.err = err.Error()
 		m.phase = phasePickOptions
-		m.form = m.buildPhase4Form()
+		m.form = m.buildOptionsForm()
 		return m, m.form.Init()
 	}
 	m.tasks = tasks
 	m.err = ""
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("  Config:      %s\n", m.selectedConfig))
-	sb.WriteString(fmt.Sprintf("  Source:      %s:%s/%s\n", uc.Source.Host, uc.Source.Port, uc.Source.Database))
-	sb.WriteString(fmt.Sprintf("  Destination: %s:%s/%s\n", uc.Destination.Host, uc.Destination.Port, uc.Destination.Database))
+	sb.WriteString(fmt.Sprintf("  Source:      %s  (%s:%s/%s)\n", m.selectedSource, srcConn.Host, srcConn.Port, srcConn.Database))
+	sb.WriteString(fmt.Sprintf("  Destination: %s  (%s:%s/%s)\n", m.selectedDest, dstConn.Host, dstConn.Port, dstConn.Database))
 	sb.WriteString(fmt.Sprintf("  Sync config: %s\n", m.syncConfigPath))
 	sb.WriteString("\n")
 	sb.WriteString(strategyLine(m.options))
@@ -463,20 +480,29 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	vp := viewport.New(m.width-4, m.height-6)
 	m.runViewport = vp
 
+	srcConn, err := m.handler.GetConnection(m.selectedSource)
+	if err != nil {
+		m.syncErr = err
+		m.phase = phaseResults
+		return m, nil
+	}
+	dstConn, err := m.handler.GetConnection(m.selectedDest)
+	if err != nil {
+		m.syncErr = err
+		m.phase = phaseResults
+		return m, nil
+	}
+
+	source, dest, err := setupWizardDatasources(&srcConn, &dstConn)
+	if err != nil {
+		m.syncErr = err
+		m.phase = phaseResults
+		return m, nil
+	}
+
 	pr, pw := io.Pipe()
 	reader := bufio.NewReader(pr)
 	m.syncReader = reader
-
-	uc, err := m.handler.GetConfig(m.selectedConfig)
-	if err != nil {
-		_ = pw.Close()
-		return m, nil
-	}
-	source, dest, err := setupWizardDatasources(&uc)
-	if err != nil {
-		_ = pw.Close()
-		return m, nil
-	}
 
 	go func() {
 		defer func() {
@@ -505,7 +531,6 @@ func readSyncLine(r *bufio.Reader) tea.Cmd {
 	return func() tea.Msg {
 		line, err := r.ReadString('\n')
 		if len(line) > 0 {
-			// Return the line; if the pipe also closed, we'll detect it on the next read.
 			return syncLineMsg(line)
 		}
 		if err != nil {
@@ -522,21 +547,21 @@ func unwrapPipeErr(err error) error {
 	return err
 }
 
-func setupWizardDatasources(c *config.UserConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource, error) {
+func setupWizardDatasources(src, dst *config.ConnectionConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource, error) {
 	dest, err := datasource.NewReadWriteDataSource("destination", url.URL{
 		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%s", c.Destination.Host, c.Destination.Port),
-		User:   url.UserPassword(c.Destination.User, c.Destination.Password),
-		Path:   c.Destination.Database,
+		Host:   fmt.Sprintf("%s:%s", dst.Host, dst.Port),
+		User:   url.UserPassword(dst.User, dst.Password),
+		Path:   dst.Database,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("destination: %w", err)
 	}
 	source, err := datasource.NewReadDataSource("source", url.URL{
 		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%s", c.Source.Host, c.Source.Port),
-		User:   url.UserPassword(c.Source.User, c.Source.Password),
-		Path:   c.Source.Database,
+		Host:   fmt.Sprintf("%s:%s", src.Host, src.Port),
+		User:   url.UserPassword(src.User, src.Password),
+		Path:   src.Database,
 	})
 	if err != nil {
 		_ = dest.DB.Close(context.Background())
@@ -559,8 +584,16 @@ func (m syncWizardModel) View() string {
 	var sb strings.Builder
 
 	switch m.phase {
-	case phasePickConfig:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 1 of 4: Connection Config"))
+	case phasePickSource:
+		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 1 of 5: Source Connection"))
+		sb.WriteString("\n")
+		if m.err != "" {
+			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+		}
+		sb.WriteString(m.form.View())
+
+	case phasePickDest:
+		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 2 of 5: Destination Connection"))
 		sb.WriteString("\n")
 		if m.err != "" {
 			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
@@ -568,7 +601,7 @@ func (m syncWizardModel) View() string {
 		sb.WriteString(m.form.View())
 
 	case phasePickSyncFile:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 2 of 4: Sync Config File"))
+		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 3 of 5: Sync Config File"))
 		sb.WriteString("\n")
 		if m.err != "" {
 			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
@@ -576,12 +609,12 @@ func (m syncWizardModel) View() string {
 		sb.WriteString(m.form.View())
 
 	case phasePickGroupsAndTables:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 3 of 4: Groups & Tables"))
+		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 4 of 5: Groups & Tables"))
 		sb.WriteString("\n")
 		sb.WriteString(m.form.View())
 
 	case phasePickOptions:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 4 of 4: Options"))
+		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 5 of 5: Options"))
 		sb.WriteString("\n")
 		if m.err != "" {
 			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")

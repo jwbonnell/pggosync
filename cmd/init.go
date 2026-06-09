@@ -6,17 +6,17 @@ import (
 )
 
 func initCmd(handler *config.UserConfigHandler) *cli.Command {
-	cmd := cli.Command{
-		Name:    "init",
-		Aliases: []string{"i"},
-		Usage:   "initialize a new config",
+	return &cli.Command{
+		Name:      "init",
+		Aliases:   []string{"i"},
+		Usage:     "Create a new connection config",
+		ArgsUsage: "<name>",
 		Action: func(cCtx *cli.Context) error {
-			configID := cCtx.Args().First()
-			if configID == "" {
-				configID = "default"
+			name := cCtx.Args().First()
+			if name == "" {
+				name = "default"
 			}
-			return handler.InitConfig(configID)
+			return handler.InitConnection(name)
 		},
 	}
-	return &cmd
 }

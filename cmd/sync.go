@@ -15,10 +15,20 @@ import (
 )
 
 func syncCmd(handler *config.UserConfigHandler) *cli.Command {
-	cmd := cli.Command{
+	return &cli.Command{
 		Name:  "sync",
 		Usage: "Sync one or more groups",
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "source",
+				Aliases: []string{"s"},
+				Usage:   "Source connection name (defaults to saved default).",
+			},
+			&cli.StringFlag{
+				Name:    "dest",
+				Aliases: []string{"d"},
+				Usage:   "Destination connection name (defaults to saved default).",
+			},
 			&cli.BoolFlag{
 				Name:    "truncate",
 				Aliases: []string{"tr"},
@@ -53,42 +63,48 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Name:     "config",
 				Aliases:  []string{"c"},
 				Required: true,
-				Usage:    "Flag to specify the path to the sync config file.",
+				Usage:    "Path to the sync config file.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "group",
 				Aliases: []string{"g"},
-				Usage:   "Flag to specify which groups will be synced. This can be passed multiple times for multiple groups to be synced.",
+				Usage:   "Groups to sync. Repeatable.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "table",
 				Aliases: []string{"t"},
-				Usage:   "Flag to specify which tables will be synced. This can be passed multiple times for multiple tables to be synced.",
+				Usage:   "Tables to sync. Repeatable.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "exclude",
 				Aliases: []string{"e"},
-				Usage:   "Flag to specify which tables to exclude from syncing.",
+				Usage:   "Tables to exclude. Repeatable.",
 			},
 			&cli.BoolFlag{
 				Name:    "quiet",
 				Aliases: []string{"q"},
-				Usage:   "Suppress per-table progress output. Only errors and the final summary are printed.",
+				Usage:   "Suppress per-table progress output.",
 			},
 			&cli.BoolFlag{
 				Name:    "dry-run",
 				Aliases: []string{"dr"},
-				Usage:   "Simulate the sync without committing changes. Shows row counts per table.",
+				Usage:   "Simulate the sync without committing changes.",
 			},
 			&cli.IntFlag{
 				Name:    "concurrency",
 				Aliases: []string{"con"},
 				Value:   1,
-				Usage:   "Number of source tables to pre-fetch concurrently. Each uses its own source connection. Destination writes remain sequential and atomic.",
+				Usage:   "Number of source tables to pre-fetch concurrently.",
 			},
 		},
 		Action: func(cCtx *cli.Context) error {
-			initRequired(handler)
+			requireConnections(handler)
+
+			srcConn, dstConn, err := resolveConnections(handler, cCtx.String("source"), cCtx.String("dest"))
+			if err != nil {
+				log.Fatalf("Could not resolve connections: %v", err)
+			}
+
 			args := opts.CLIArgs{
 				Truncate:         cCtx.Bool("truncate"),
 				Preserve:         cCtx.Bool("preserve"),
@@ -105,26 +121,18 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Excluded:         cCtx.StringSlice("exclude"),
 			}
 
-			var err error
-			c, err := handler.GetCurrentConfig()
-			if err != nil {
-				log.Fatalf("Could not load connection config: %v", err)
-			}
-
 			sc, err := config.GetSyncConfig(args.SyncConfigPath)
 			if err != nil {
 				log.Fatalf("%v", err)
 			}
 
-			source, destination := setupDatasources(&c)
+			source, destination := setupDatasources(&srcConn, &dstConn)
 			defer func() {
-				err := source.DB.Close(cCtx.Context)
-				if err != nil {
-					log.Fatalf("Error closing source DB connection: %v", err)
+				if err := source.DB.Close(cCtx.Context); err != nil {
+					log.Fatalf("Error closing source DB: %v", err)
 				}
-				err = destination.DB.Close(cCtx.Context)
-				if err != nil {
-					log.Fatalf("Error closing destination DB connection: %v", err)
+				if err := destination.DB.Close(cCtx.Context); err != nil {
+					log.Fatalf("Error closing destination DB: %v", err)
 				}
 			}()
 
@@ -138,7 +146,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 			}
 			excludedTables, err := opts.ProcessExcludedArgs(excluded)
 			if err != nil {
-				log.Fatalf("Failed to process excluded flag. Usage: ${SCHEMA}.${TABLE} or ${TABLE}: %v", err)
+				log.Fatalf("Failed to process excluded flag: %v", err)
 			}
 
 			resolver := sync.NewTaskResolver(source, destination, sc.Groups, args.Truncate, args.Preserve, args.DeferConstraints, args.DisableTriggers, excludedTables)
@@ -177,12 +185,8 @@ Tables: %d
 =================================================================
 `, dryRunLabel,
 						sc.Description,
-						c.Source.Host,
-						c.Source.Port,
-						c.Source.Database,
-						c.Destination.Host,
-						c.Destination.Port,
-						c.Destination.Database,
+						srcConn.Host, srcConn.Port, srcConn.Database,
+						dstConn.Host, dstConn.Port, dstConn.Database,
 						strconv.FormatBool(args.Truncate),
 						strconv.FormatBool(args.Preserve),
 						strconv.FormatBool(args.DisableTriggers),
@@ -234,5 +238,4 @@ Tables: %d
 			return nil
 		},
 	}
-	return &cmd
 }

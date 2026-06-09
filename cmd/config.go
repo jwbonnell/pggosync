@@ -2,92 +2,117 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
-	"slices"
-	"strings"
 )
 
 func configCmd(handler *config.UserConfigHandler) *cli.Command {
-
-	cmd := cli.Command{
+	return &cli.Command{
 		Name:    "config",
 		Aliases: []string{"t"},
-		Usage:   "commands for accessing and switching configs",
+		Usage:   "Manage connection configs",
 		Action: func(c *cli.Context) error {
-			fmt.Println("config base action")
+			fmt.Println("Use a subcommand: list, get, default")
 			return nil
 		},
 		Subcommands: []*cli.Command{
 			{
-				Name:  "get",
-				Usage: "get currently selected config information",
+				Name:      "get",
+				Usage:     "Show a connection config",
+				ArgsUsage: "<name>",
 				Action: func(cCtx *cli.Context) error {
-					initRequired(handler)
-					configID, err := handler.GetDefault()
+					name := cCtx.Args().First()
+					if name == "" {
+						return fmt.Errorf("provide a connection name")
+					}
+					conn, err := handler.GetConnection(name)
 					if err != nil {
 						return err
 					}
-					c, err := handler.GetConfig(configID)
+					conn.Password = "***"
+					out, err := yaml.Marshal(conn)
 					if err != nil {
 						return err
 					}
-
-					c.Source.Password = "*************"
-					c.Destination.Password = "*************"
-
-					out, err := yaml.Marshal(c)
-					if err != nil {
-						return err
-					}
-
-					fmt.Printf("Current: %s\n", configID)
-					fmt.Println("--------------------------")
-					fmt.Printf("%s\n", out)
-					return nil
-				},
-			},
-			{
-				Name:  "set",
-				Usage: "set current config",
-				Action: func(cCtx *cli.Context) error {
-					initRequired(handler)
-					configID := cCtx.Args().First()
-					if configID == "" {
-						return fmt.Errorf("please provide a config ID")
-					}
-
-					configs, err := handler.ListConfigs()
-					if err != nil {
-						return err
-					}
-
-					if !slices.Contains(configs, configID) {
-						return fmt.Errorf("config %s does not exist", configID)
-					}
-
-					if err := handler.SetDefault(configID); err != nil {
-						return err
-					}
+					fmt.Printf("Connection: %s\n", name)
+					fmt.Println("---")
+					fmt.Printf("%s", out)
 					return nil
 				},
 			},
 			{
 				Name:  "list",
-				Usage: "list configs",
+				Usage: "List all connection configs",
 				Action: func(cCtx *cli.Context) error {
-					initRequired(handler)
-					configs, err := handler.ListConfigs()
+					conns, err := handler.ListConnections()
 					if err != nil {
 						return err
 					}
-
-					fmt.Println(strings.Join(configs, " | "))
+					if len(conns) == 0 {
+						fmt.Println("No connections. Run 'pggosync init <name>' to create one.")
+						return nil
+					}
+					d, _ := handler.GetDefaults()
+					for _, c := range conns {
+						markers := []string{}
+						if c == d.Source {
+							markers = append(markers, "source")
+						}
+						if c == d.Dest {
+							markers = append(markers, "dest")
+						}
+						if len(markers) > 0 {
+							fmt.Printf("  %s  [default %s]\n", c, strings.Join(markers, ", "))
+						} else {
+							fmt.Printf("  %s\n", c)
+						}
+					}
+					return nil
+				},
+			},
+			{
+				Name:  "default",
+				Usage: "Get or set the default source and destination connections",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "source",
+						Usage: "Default source connection name",
+					},
+					&cli.StringFlag{
+						Name:  "dest",
+						Usage: "Default destination connection name",
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					src := cCtx.String("source")
+					dst := cCtx.String("dest")
+					if src == "" && dst == "" {
+						// Show current defaults.
+						d, err := handler.GetDefaults()
+						if err != nil {
+							return err
+						}
+						fmt.Printf("source: %s\ndest:   %s\n", d.Source, d.Dest)
+						return nil
+					}
+					// Get current defaults to fill in any unspecified side.
+					current, _ := handler.GetDefaults()
+					if src == "" {
+						src = current.Source
+					}
+					if dst == "" {
+						dst = current.Dest
+					}
+					if err := handler.SetDefaults(src, dst); err != nil {
+						return err
+					}
+					fmt.Printf("Defaults set — source: %s  dest: %s\n", src, dst)
 					return nil
 				},
 			},
 		},
 	}
-	return &cmd
 }
