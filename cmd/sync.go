@@ -20,16 +20,19 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 		Usage: "Sync one or more groups",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "source",
-				Aliases:  []string{"s"},
-				Required: true,
-				Usage:    "Source connection name.",
+				Name:    "profile",
+				Aliases: []string{"pr"},
+				Usage:   "Load a saved sync profile as defaults (explicit flags override profile values).",
 			},
 			&cli.StringFlag{
-				Name:     "dest",
-				Aliases:  []string{"d"},
-				Required: true,
-				Usage:    "Destination connection name.",
+				Name:    "source",
+				Aliases: []string{"s"},
+				Usage:   "Source connection name.",
+			},
+			&cli.StringFlag{
+				Name:    "dest",
+				Aliases: []string{"d"},
+				Usage:   "Destination connection name.",
 			},
 			&cli.BoolFlag{
 				Name:    "truncate",
@@ -62,10 +65,9 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Usage:   "Disable triggers on destination database",
 			},
 			&cli.StringFlag{
-				Name:     "config",
-				Aliases:  []string{"c"},
-				Required: true,
-				Usage:    "Path to the sync config file.",
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "Path to the sync config file.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "group",
@@ -102,11 +104,9 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 		Action: func(cCtx *cli.Context) error {
 			requireConnections(handler)
 
-			srcConn, dstConn, err := resolveConnections(handler, cCtx.String("source"), cCtx.String("dest"))
-			if err != nil {
-				return fmt.Errorf("could not resolve connections: %w", err)
-			}
-
+			// Start with flag values; profile fills in any unset fields.
+			sourceName := cCtx.String("source")
+			destName := cCtx.String("dest")
 			args := opts.CLIArgs{
 				Truncate:         cCtx.Bool("truncate"),
 				Preserve:         cCtx.Bool("preserve"),
@@ -121,6 +121,71 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 				Groups:           cCtx.StringSlice("group"),
 				Tables:           cCtx.StringSlice("table"),
 				Excluded:         cCtx.StringSlice("exclude"),
+			}
+
+			if profileName := cCtx.String("profile"); profileName != "" {
+				profiles, err := handler.LoadProfiles()
+				if err != nil {
+					return fmt.Errorf("could not load profiles: %w", err)
+				}
+				var found *config.SyncProfile
+				for i := range profiles.Profiles {
+					if profiles.Profiles[i].Name == profileName {
+						found = &profiles.Profiles[i]
+						break
+					}
+				}
+				if found == nil {
+					return fmt.Errorf("profile %q not found", profileName)
+				}
+				if !cCtx.IsSet("source") {
+					sourceName = found.Source
+				}
+				if !cCtx.IsSet("dest") {
+					destName = found.Dest
+				}
+				if !cCtx.IsSet("config") {
+					args.SyncConfigPath = found.ConfigFile
+				}
+				if !cCtx.IsSet("truncate") {
+					args.Truncate = found.Truncate
+				}
+				if !cCtx.IsSet("preserve") {
+					args.Preserve = found.Preserve
+				}
+				if !cCtx.IsSet("defer-constraints") {
+					args.DeferConstraints = found.DeferConstraints
+				}
+				if !cCtx.IsSet("disable-triggers") {
+					args.DisableTriggers = found.DisableTriggers
+				}
+				if !cCtx.IsSet("dry-run") {
+					args.DryRun = found.DryRun
+				}
+				if !cCtx.IsSet("no-safety") {
+					args.NoSafety = found.NoSafety
+				}
+				if !cCtx.IsSet("concurrency") {
+					args.Concurrency = found.Concurrency
+				}
+				if len(args.Groups) == 0 {
+					args.Groups = found.Groups
+				}
+			}
+
+			if sourceName == "" {
+				return fmt.Errorf("--source is required (or use --profile)")
+			}
+			if destName == "" {
+				return fmt.Errorf("--dest is required (or use --profile)")
+			}
+			if args.SyncConfigPath == "" {
+				return fmt.Errorf("--config is required (or use --profile)")
+			}
+
+			srcConn, dstConn, err := resolveConnections(handler, sourceName, destName)
+			if err != nil {
+				return fmt.Errorf("could not resolve connections: %w", err)
 			}
 
 			sc, err := config.GetSyncConfig(args.SyncConfigPath)

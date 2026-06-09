@@ -31,6 +31,7 @@ const (
 	phasePreview
 	phaseRunning
 	phaseResults
+	phaseSaveProfile
 )
 
 type syncOptions struct {
@@ -84,8 +85,12 @@ type syncWizardModel struct {
 	syncResultCh chan sync.SyncResult
 
 	// Phase 8 (results)
-	elapsed    time.Duration
-	syncResult sync.SyncResult
+	elapsed         time.Duration
+	syncResult      sync.SyncResult
+	savedProfileMsg string
+
+	// Phase 9 (save profile)
+	profileNameInput string
 }
 
 type syncLineMsg string
@@ -253,6 +258,11 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 				return next, next.Init()
 			case "esc", "q":
 				return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
+			case "p":
+				m.phase = phaseSaveProfile
+				m.profileNameInput = m.selectedSource + "-" + m.selectedDest
+				m.form = m.buildSaveProfileForm()
+				return m, m.form.Init()
 			}
 		case phaseRunning:
 			if msg.String() == "q" || msg.String() == "ctrl+c" {
@@ -332,6 +342,9 @@ func (m syncWizardModel) handlePreviewKey(msg tea.KeyMsg) (syncWizardModel, tea.
 // goBack navigates to the previous wizard phase, rebuilding the appropriate form.
 func (m syncWizardModel) goBack() (syncWizardModel, tea.Cmd) {
 	switch m.phase {
+	case phaseSaveProfile:
+		m.phase = phaseResults
+		return m, nil
 	case phasePickSource:
 		return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
 	case phasePickDest:
@@ -388,6 +401,15 @@ func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 			m.options.concurrency = 1
 		}
 		return m.buildPreview()
+
+	case phaseSaveProfile:
+		if err := m.handler.SaveProfile(m.toProfile(m.profileNameInput)); err != nil {
+			m.err = err.Error()
+		} else {
+			m.savedProfileMsg = fmt.Sprintf("Saved as profile %q", m.profileNameInput)
+		}
+		m.phase = phaseResults
+		return m, nil
 	}
 	return m, nil
 }
@@ -621,6 +643,62 @@ func sslmodeQuery(mode string) string {
 	return "sslmode=" + url.QueryEscape(mode)
 }
 
+// buildSaveProfileForm creates a single-input form asking for the profile name.
+func (m *syncWizardModel) buildSaveProfileForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Profile name").
+				Description("Save this configuration for quick re-launch").
+				Value(&m.profileNameInput),
+		),
+	)
+}
+
+// toProfile converts the current wizard state into a SyncProfile for persistence.
+func (m syncWizardModel) toProfile(name string) config.SyncProfile {
+	return config.SyncProfile{
+		Name:             name,
+		Source:           m.selectedSource,
+		Dest:             m.selectedDest,
+		ConfigFile:       m.syncConfigPath,
+		Groups:           m.selectedGroups,
+		RawTableInput:    m.rawTableInput,
+		Truncate:         m.options.truncate,
+		Preserve:         m.options.preserve,
+		DeferConstraints: m.options.deferConstraints,
+		DisableTriggers:  m.options.disableTriggers,
+		Concurrency:      m.options.concurrency,
+		DryRun:           m.options.dryRun,
+		NoSafety:         m.options.noSafety,
+		CreatedAt:        time.Now(),
+	}
+}
+
+// newSyncWizardModelFromProfile builds a wizard pre-populated from a saved profile, ready to call buildPreview().
+func newSyncWizardModelFromProfile(handler *config.UserConfigHandler, p config.SyncProfile) syncWizardModel {
+	m := newSyncWizardModel(handler)
+	m.selectedSource = p.Source
+	m.selectedDest = p.Dest
+	m.syncConfigPath = p.ConfigFile
+	m.selectedGroups = p.Groups
+	m.rawTableInput = p.RawTableInput
+	m.options = syncOptions{
+		truncate:         p.Truncate,
+		preserve:         p.Preserve,
+		deferConstraints: p.DeferConstraints,
+		disableTriggers:  p.DisableTriggers,
+		concurrency:      p.Concurrency,
+		dryRun:           p.DryRun,
+		noSafety:         p.NoSafety,
+	}
+	if sc, err := config.GetSyncConfig(p.ConfigFile); err == nil {
+		m.syncConfig = sc
+	}
+	m.phase = phasePickOptions
+	return m
+}
+
 // buildHistoryEntry converts the completed sync result into a config.SyncHistoryEntry for persistence.
 func (m syncWizardModel) buildHistoryEntry(syncErr error, result sync.SyncResult) config.SyncHistoryEntry {
 	tables := make([]config.TableHistoryEntry, len(result.Tables))
@@ -709,6 +787,14 @@ func (m syncWizardModel) View() string {
 		sb.WriteString("\n")
 		sb.WriteString(borderStyle.Render(m.preview.View()))
 
+	case phaseSaveProfile:
+		sb.WriteString(wizardTitleStyle.Render("Save Profile"))
+		sb.WriteString("\n")
+		if m.err != "" {
+			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+		}
+		sb.WriteString(m.form.View())
+
 	case phaseRunning:
 		label := "Syncing"
 		if m.options.dryRun {
@@ -742,8 +828,11 @@ func (m syncWizardModel) View() string {
 			}
 			sb.WriteString(borderStyle.Render(stats.String()))
 		}
+		if m.savedProfileMsg != "" {
+			sb.WriteString(successStyle.Render(m.savedProfileMsg) + "\n")
+		}
 		sb.WriteString("\n")
-		sb.WriteString(helpStyle.Render("r: run again   esc/q: main menu"))
+		sb.WriteString(helpStyle.Render("r: run again   p: save as profile   esc/q: main menu"))
 	}
 
 	return docStyle.Render(sb.String())

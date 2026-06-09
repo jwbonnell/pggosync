@@ -87,6 +87,11 @@ func newMenuModel(lastEntry *config.SyncHistoryEntry) menuModel {
 			description: "Interactively compose a sync config YAML file",
 			target:      syncConfigScreen,
 		},
+		menuItem{
+			title:       "Manage Profiles",
+			description: "Save and launch named sync configurations",
+			target:      profileScreen,
+		},
 	}
 
 	l := list.New(items, newMenuItemDelegate(), 60, 20)

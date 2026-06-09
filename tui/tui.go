@@ -12,6 +12,7 @@ const (
 	syncWizardScreen
 	userConfigScreen
 	syncConfigScreen
+	profileScreen
 )
 
 type model struct {
@@ -20,6 +21,7 @@ type model struct {
 	syncWizard syncWizardModel
 	userConfig userConfigModel
 	syncConfig syncConfigBuilderModel
+	profiles   profileModel
 	handler    *config.UserConfigHandler
 	width      int
 	height     int
@@ -37,6 +39,7 @@ func Run(handler *config.UserConfigHandler) error {
 		syncWizard: newSyncWizardModel(handler),
 		userConfig: newUserConfigModel(handler),
 		syncConfig: newSyncConfigModel(),
+		profiles:   newProfileModel(handler),
 		handler:    handler,
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -75,7 +78,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.userConfig, cmd = m.userConfig.Update(msg)
 		case syncConfigScreen:
 			m.syncConfig, cmd = m.syncConfig.Update(msg)
+		case profileScreen:
+			m.profiles, cmd = m.profiles.Update(msg)
 		}
+		return m, cmd
+
+	case launchProfileMsg:
+		wiz := newSyncWizardModelFromProfile(m.handler, msg.profile)
+		wiz, cmd := wiz.buildPreview()
+		m.syncWizard = wiz
+		m.screen = syncWizardScreen
 		return m, cmd
 
 	case switchScreenMsg:
@@ -93,6 +105,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case syncConfigScreen:
 			m.syncConfig = newSyncConfigModel()
 			return m, m.syncConfig.Init()
+		case profileScreen:
+			m.profiles = newProfileModel(m.handler)
+			return m, m.profiles.Init()
 		}
 
 	case tea.KeyMsg:
@@ -111,6 +126,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.userConfig, cmd = m.userConfig.Update(msg)
 	case syncConfigScreen:
 		m.syncConfig, cmd = m.syncConfig.Update(msg)
+	case profileScreen:
+		m.profiles, cmd = m.profiles.Update(msg)
 	}
 	return m, cmd
 }
@@ -124,6 +141,8 @@ func (m model) View() string {
 		return m.userConfig.View()
 	case syncConfigScreen:
 		return m.syncConfig.View()
+	case profileScreen:
+		return m.profiles.View()
 	default:
 		return m.menu.View()
 	}
