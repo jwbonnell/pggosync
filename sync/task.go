@@ -22,6 +22,7 @@ type Task struct {
 	Truncate         bool
 	DeferConstraints bool
 	DestRowCount     int64
+	SourceRowCount   int64 // set by TUI preview via GetRowCountFiltered; 0 means unknown
 }
 
 // GetDestPKs extracts just the column names from the destination PK definition.

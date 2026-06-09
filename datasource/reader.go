@@ -272,10 +272,19 @@ func (r *ReaderDataSource) GetSequenceValue(ctx context.Context, schema, sequenc
 
 // GetRowCount issues a full COUNT(*); only call when an exact count is needed (e.g. the truncate confirmation banner).
 func (r *ReaderDataSource) GetRowCount(ctx context.Context, tableName string) (int64, error) {
+	return r.GetRowCountFiltered(ctx, tableName, "")
+}
+
+// GetRowCountFiltered issues COUNT(*) with an optional WHERE filter clause.
+func (r *ReaderDataSource) GetRowCountFiltered(ctx context.Context, tableName, filter string) (int64, error) {
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
+	if filter != "" {
+		query += " WHERE " + filter
+	}
 	var count int64
-	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+	err := r.DB.QueryRow(ctx, query).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("GetRowCount %s: %w", tableName, err)
+		return 0, fmt.Errorf("GetRowCountFiltered %s: %w", tableName, err)
 	}
 	return count, nil
 }

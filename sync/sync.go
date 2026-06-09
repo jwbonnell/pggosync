@@ -29,6 +29,14 @@ type SyncResult struct {
 // Sync opens a single destination transaction, pre-fetches source rows into SafeBuffers concurrently (bounded by
 // concurrency), drains each buffer sequentially, and commits. Rolls back on any error or when dryRun is true.
 func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (SyncResult, error) {
+	// logf serializes writes to out so goroutine-originated progress lines don't interleave.
+	var outMu sync.Mutex
+	logf := func(format string, args ...any) {
+		outMu.Lock()
+		fmt.Fprintf(out, format, args...)
+		outMu.Unlock()
+	}
+
 	bufs := make([]*SafeBuffer, len(tasks))
 	for i := range bufs {
 		bufs[i] = NewSafeBuffer(&bytes.Buffer{})
@@ -56,9 +64,16 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 				query := fmt.Sprintf("COPY (SELECT %s FROM %s %s) TO STDOUT",
 					strings.Join(cols, ","), task.FullName(), filterClause)
 
+				if !quiet {
+					logf("Prefetching %s...\n", task.FullName())
+				}
+
 				pgConn, err := source.NewPgConn(ctx)
 				if err != nil {
 					bufs[i].SetDoneWithError(fmt.Errorf("source connection: %w", err))
+					if !quiet {
+						logf("Prefetch ready %s\n", task.FullName())
+					}
 					return
 				}
 				defer pgConn.Close(ctx)
@@ -68,6 +83,9 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 					bufs[i].SetDoneWithError(err)
 				} else {
 					bufs[i].SetDone()
+				}
+				if !quiet {
+					logf("Prefetch ready %s\n", task.FullName())
 				}
 			}(i)
 		}
@@ -82,20 +100,20 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	defer func() {
 		if err != nil {
-			fmt.Fprintln(out, "Rolling back...", err)
+			logf("Rolling back... %v\n", err)
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
-				fmt.Fprintln(out, "Rollback failed:", rbErr)
+				logf("Rollback failed: %v\n", rbErr)
 			}
 		} else if dryRun {
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
-				fmt.Fprintln(out, "Rollback failed:", rbErr)
+				logf("Rollback failed: %v\n", rbErr)
 			}
 		} else {
 			if !quiet {
-				fmt.Fprintln(out, "Committing...")
+				logf("Committing...\n")
 			}
 			if cmErr := tx.Commit(ctx); cmErr != nil {
-				fmt.Fprintln(out, "Commit failed:", cmErr)
+				logf("Commit failed: %v\n", cmErr)
 			}
 		}
 	}()
@@ -108,11 +126,11 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		}
 
 		if !quiet {
-			fmt.Fprintln(out, "Deferring constraints...")
+			logf("Deferring constraints...\n")
 		}
 		err = db.DeferConstraints(ctx, tx.Conn(), ndc)
 		if err != nil {
-			fmt.Fprintln(out, "DeferConstraints error:", err)
+			logf("DeferConstraints error: %v\n", err)
 			return result, err
 		}
 	}
@@ -126,7 +144,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 		err := db.DisableUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
-			fmt.Fprintln(out, "DisableUserTriggers Error: ", err)
+			logf("DisableUserTriggers Error: %v\n", err)
 			return result, err
 		}
 	}
@@ -137,7 +155,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	for i := range tasks {
 		if !quiet {
-			fmt.Fprintf(out, "Syncing %s...\n", tasks[i].FullName())
+			logf("Syncing %s...\n", tasks[i].FullName())
 		}
 
 		strategy := taskStrategy(&tasks[i])
@@ -149,10 +167,10 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 			Err:      taskErr,
 		})
 		if taskErr != nil {
-			fmt.Fprintf(out, "Task failed %s: %v\n", tasks[i].FullName(), taskErr)
+			logf("Task failed %s: %v\n", tasks[i].FullName(), taskErr)
 			taskErrs = append(taskErrs, taskErr)
 		} else if !quiet {
-			fmt.Fprintf(out, "Done %s (%s rows)\n", tasks[i].FullName(), FormatCount(rowCount))
+			logf("Done %s (%s rows)\n", tasks[i].FullName(), FormatCount(rowCount))
 		}
 	}
 
@@ -166,26 +184,26 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	if disableTriggers {
 		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
-			fmt.Fprintln(out, "RestoreUserTriggers error:", err)
+			logf("RestoreUserTriggers error: %v\n", err)
 			return result, err
 		}
 	}
 
 	if deferConstraints {
 		if !quiet {
-			fmt.Fprintln(out, "Restoring constraints...")
+			logf("Restoring constraints...\n")
 		}
 		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
 		if err != nil {
-			fmt.Fprintln(out, "RestoreConstraints error:", err)
+			logf("RestoreConstraints error: %v\n", err)
 			return result, err
 		}
 	}
 
 	if dryRun {
-		fmt.Fprintf(out, "Dry run complete — %d table(s) processed, no changes committed.\n", len(tasks))
+		logf("Dry run complete — %d table(s) processed, no changes committed.\n", len(tasks))
 	} else {
-		fmt.Fprintln(out, "Sync complete.")
+		logf("Sync complete.\n")
 	}
 	return result, nil
 }

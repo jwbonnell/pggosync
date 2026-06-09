@@ -34,6 +34,24 @@ const (
 	phaseSaveProfile
 )
 
+type tablePhase int
+
+const (
+	tableQueued tablePhase = iota
+	tablePrefetching
+	tablePrefetchReady
+	tableWriting
+	tableDone
+	tableFailed
+)
+
+type tableProgress struct {
+	phase   tablePhase
+	rows    int64
+	errMsg  string
+	elapsed time.Duration
+}
+
 type syncOptions struct {
 	truncate         bool
 	preserve         bool
@@ -75,14 +93,16 @@ type syncWizardModel struct {
 	previewContent string
 
 	// Phase 7 (running)
-	outputLines  []string
-	runViewport  viewport.Model
-	syncErr      error
-	syncDone     bool
-	startTime    time.Time
-	syncReader   *bufio.Reader
-	cancelSync   context.CancelFunc
-	syncResultCh chan sync.SyncResult
+	tableStates     []tableProgress
+	tableIndex      map[string]int // full name → index in tasks
+	tablesCompleted int
+	totalRowsSynced int64
+	syncErr         error
+	syncDone        bool
+	startTime       time.Time
+	syncReader      *bufio.Reader
+	cancelSync      context.CancelFunc
+	syncResultCh    chan sync.SyncResult
 
 	// Phase 8 (results)
 	elapsed         time.Duration
@@ -242,10 +262,6 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 			m.preview.Width = msg.Width - 4
 			m.preview.Height = msg.Height - 6
 		}
-		if m.phase == phaseRunning {
-			m.runViewport.Width = msg.Width - 4
-			m.runViewport.Height = msg.Height - 6
-		}
 
 	case tea.KeyMsg:
 		switch m.phase {
@@ -278,9 +294,7 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		}
 
 	case syncLineMsg:
-		m.outputLines = append(m.outputLines, string(msg))
-		m.runViewport.SetContent(strings.Join(m.outputLines, ""))
-		m.runViewport.GotoBottom()
+		m.parseSyncLine(strings.TrimRight(string(msg), "\n"))
 		return m, readSyncLine(m.syncReader, m.syncResultCh)
 
 	case syncDoneMsg:
@@ -303,11 +317,6 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 	if m.phase == phasePreview {
 		var cmd tea.Cmd
 		m.preview, cmd = m.preview.Update(msg)
-		return m, cmd
-	}
-	if m.phase == phaseRunning {
-		var cmd tea.Cmd
-		m.runViewport, cmd = m.runViewport.Update(msg)
 		return m, cmd
 	}
 
@@ -466,6 +475,14 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	m.tasks = tasks
 	m.err = ""
 
+	// Fetch source row counts sequentially (connection is already open).
+	for i := range m.tasks {
+		count, err := source.GetRowCountFiltered(context.Background(), m.tasks[i].FullName(), m.tasks[i].Filter)
+		if err == nil {
+			m.tasks[i].SourceRowCount = count
+		}
+	}
+
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("  Source:      %s  (%s:%d/%s)\n", m.selectedSource, srcConn.Host, srcConn.Port, srcConn.Database))
 	sb.WriteString(fmt.Sprintf("  Destination: %s  (%s:%d/%s)\n", m.selectedDest, dstConn.Host, dstConn.Port, dstConn.Database))
@@ -475,8 +492,8 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	sb.WriteString(fmt.Sprintf("  Concurrency: %d\n", m.options.concurrency))
 	sb.WriteString(fmt.Sprintf("  Dry run:     %v\n", m.options.dryRun))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  Tables (%d):\n", len(tasks)))
-	for _, t := range tasks {
+	sb.WriteString(fmt.Sprintf("  Tables (%d):\n", len(m.tasks)))
+	for _, t := range m.tasks {
 		strategy := "upsert"
 		if t.Truncate && !t.Preserve {
 			strategy = "truncate"
@@ -487,7 +504,11 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 		if t.Truncate && !t.Preserve {
 			rowInfo = fmt.Sprintf("  (%s dest rows will be deleted)", sync.FormatCount(t.DestRowCount))
 		}
-		sb.WriteString(fmt.Sprintf("    %-40s [%s]%s\n", t.FullName(), strategy, rowInfo))
+		srcInfo := ""
+		if t.SourceRowCount > 0 {
+			srcInfo = fmt.Sprintf("  ~%s rows", sync.FormatCount(t.SourceRowCount))
+		}
+		sb.WriteString(fmt.Sprintf("    %-40s [%s]%s%s\n", t.FullName(), strategy, rowInfo, srcInfo))
 	}
 	sb.WriteString("\n  Press enter to start sync, esc to go back.\n")
 	m.previewContent = sb.String()
@@ -520,15 +541,19 @@ func strategyLine(o syncOptions) string {
 	return fmt.Sprintf("  Strategy:    %s\n", strings.Join(parts, ", "))
 }
 
-// startSync launches the sync in a background goroutine, piping its output into the running viewport via readSyncLine.
+// startSync launches the sync in a background goroutine, piping its output into the running state via readSyncLine.
 func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	m.phase = phaseRunning
-	m.outputLines = nil
 	m.syncDone = false
+	m.tablesCompleted = 0
+	m.totalRowsSynced = 0
 	m.startTime = time.Now()
 
-	vp := viewport.New(m.width-4, m.height-6)
-	m.runViewport = vp
+	m.tableStates = make([]tableProgress, len(m.tasks))
+	m.tableIndex = make(map[string]int, len(m.tasks))
+	for i, t := range m.tasks {
+		m.tableIndex[t.FullName()] = i
+	}
 
 	srcConn, err := m.handler.GetConnection(m.selectedSource)
 	if err != nil {
@@ -641,6 +666,70 @@ func sslmodeQuery(mode string) string {
 		return ""
 	}
 	return "sslmode=" + url.QueryEscape(mode)
+}
+
+// parseSyncLine updates per-table state based on a line emitted by sync.Sync().
+func (m *syncWizardModel) parseSyncLine(line string) {
+	switch {
+	case strings.HasPrefix(line, "Prefetching "):
+		name := strings.TrimSuffix(strings.TrimPrefix(line, "Prefetching "), "...")
+		if i, ok := m.tableIndex[name]; ok {
+			m.tableStates[i].phase = tablePrefetching
+		}
+	case strings.HasPrefix(line, "Prefetch ready "):
+		name := strings.TrimPrefix(line, "Prefetch ready ")
+		if i, ok := m.tableIndex[name]; ok {
+			m.tableStates[i].phase = tablePrefetchReady
+		}
+	case strings.HasPrefix(line, "Syncing "):
+		name := strings.TrimSuffix(strings.TrimPrefix(line, "Syncing "), "...")
+		if i, ok := m.tableIndex[name]; ok {
+			m.tableStates[i].phase = tableWriting
+		}
+	case strings.HasPrefix(line, "Done "):
+		if name, rows, ok := parseDoneLine(line); ok {
+			if i, ok2 := m.tableIndex[name]; ok2 {
+				m.tableStates[i].phase = tableDone
+				m.tableStates[i].rows = rows
+				m.tableStates[i].elapsed = time.Since(m.startTime)
+				m.tablesCompleted++
+				m.totalRowsSynced += rows
+			}
+		}
+	case strings.HasPrefix(line, "Task failed "):
+		if name, errMsg, ok := parseFailedLine(line); ok {
+			if i, ok2 := m.tableIndex[name]; ok2 {
+				m.tableStates[i].phase = tableFailed
+				m.tableStates[i].errMsg = errMsg
+				m.tablesCompleted++
+			}
+		}
+	}
+}
+
+// parseDoneLine parses "Done public.users (1,234 rows)" into table name and row count.
+func parseDoneLine(line string) (table string, rows int64, ok bool) {
+	// Format: "Done <table> (<count> rows)"
+	rest := strings.TrimPrefix(line, "Done ")
+	open := strings.LastIndex(rest, " (")
+	if open < 0 {
+		return "", 0, false
+	}
+	table = rest[:open]
+	inside := strings.TrimSuffix(rest[open+2:], " rows)")
+	countStr := strings.ReplaceAll(inside, ",", "")
+	n, err := fmt.Sscanf(countStr, "%d", &rows)
+	return table, rows, n == 1 && err == nil
+}
+
+// parseFailedLine parses "Task failed public.users: <error>" into table name and error message.
+func parseFailedLine(line string) (table, errMsg string, ok bool) {
+	rest := strings.TrimPrefix(line, "Task failed ")
+	colon := strings.Index(rest, ": ")
+	if colon < 0 {
+		return "", "", false
+	}
+	return rest[:colon], rest[colon+2:], true
 }
 
 // buildSaveProfileForm creates a single-input form asking for the profile name.
@@ -800,9 +889,66 @@ func (m syncWizardModel) View() string {
 		if m.options.dryRun {
 			label = "Dry run"
 		}
-		sb.WriteString(wizardTitleStyle.Render(fmt.Sprintf("%s %s...", m.spinner.View(), label)))
+		elapsed := time.Since(m.startTime).Round(time.Second)
+		sb.WriteString(wizardTitleStyle.Render(fmt.Sprintf("%s %s...  %s", m.spinner.View(), label, elapsed)))
+		sb.WriteString("\n\n")
+
+		// Progress bar
+		total := len(m.tasks)
+		barWidth := 20
+		filled := 0
+		if total > 0 {
+			filled = m.tablesCompleted * barWidth / total
+		}
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+		sb.WriteString(fmt.Sprintf("  %d / %d tables  %s\n\n", m.tablesCompleted, total, bar))
+
+		// Per-table status list (cap to available height)
+		maxRows := m.height - 10
+		if maxRows < 4 {
+			maxRows = 4
+		}
+		shown := m.tasks
+		if len(shown) > maxRows {
+			shown = shown[:maxRows]
+		}
+		for i, t := range shown {
+			var indicator, detail string
+			st := m.tableStates[i]
+			switch st.phase {
+			case tableDone:
+				indicator = successStyle.Render("✓")
+				detail = fmt.Sprintf("%s rows", sync.FormatCount(st.rows))
+				if t.SourceRowCount > 0 {
+					detail += fmt.Sprintf("  (~%s est.)", sync.FormatCount(t.SourceRowCount))
+				}
+			case tableFailed:
+				indicator = errorStyle.Render("✗")
+				detail = errorStyle.Render("FAILED: " + st.errMsg)
+			case tableWriting:
+				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("●")
+				detail = "writing..."
+			case tablePrefetching, tablePrefetchReady:
+				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render("↓")
+				detail = "prefetching..."
+			default:
+				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("·")
+				detail = "queued"
+			}
+			sb.WriteString(fmt.Sprintf("  %s  %-40s  %s\n", indicator, t.FullName(), detail))
+		}
+		if len(m.tasks) > maxRows {
+			sb.WriteString(fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("... and %d more", len(m.tasks)-maxRows))))
+		}
+
+		// Footer stats
 		sb.WriteString("\n")
-		sb.WriteString(borderStyle.Render(m.runViewport.View()))
+		if m.totalRowsSynced > 0 && elapsed.Seconds() >= 1 {
+			rps := float64(m.totalRowsSynced) / elapsed.Seconds()
+			sb.WriteString(fmt.Sprintf("  %s total rows · %s/sec\n", sync.FormatCount(m.totalRowsSynced), sync.FormatCount(int64(rps))))
+		} else if m.totalRowsSynced > 0 {
+			sb.WriteString(fmt.Sprintf("  %s total rows\n", sync.FormatCount(m.totalRowsSynced)))
+		}
 		sb.WriteString("\n")
 		sb.WriteString(helpStyle.Render("q: cancel sync"))
 
