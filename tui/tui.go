@@ -29,6 +29,7 @@ type switchScreenMsg struct {
 	screen screen
 }
 
+// Run starts the Bubble Tea program in alt-screen mode with the main menu as the initial screen.
 func Run(handler *config.UserConfigHandler) error {
 	m := model{
 		screen:     menuScreen,
@@ -43,10 +44,12 @@ func Run(handler *config.UserConfigHandler) error {
 	return err
 }
 
+// Init delegates to the menu's Init so the list renders immediately.
 func (m model) Init() tea.Cmd {
 	return m.menu.Init()
 }
 
+// Update routes messages to the active screen; handles window resize, screen switching, and global Ctrl+C.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -102,6 +105,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View delegates rendering to whichever screen is currently active.
 func (m model) View() string {
 	switch m.screen {
 	case syncWizardScreen:

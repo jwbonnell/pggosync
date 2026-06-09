@@ -13,14 +13,17 @@ type Table struct {
 	Name   string `db:"name"`
 }
 
+// FullName returns the schema-qualified table name as "schema.name".
 func (t *Table) FullName() string {
 	return fmt.Sprintf("%s.%s", t.Schema, t.Name)
 }
 
+// Equal reports whether two tables share the same schema and name (case-sensitive).
 func (t *Table) Equal(other Table) bool {
 	return t.Schema == other.Schema && t.Name == other.Name
 }
 
+// GetTables fetches all non-system base tables from information_schema ordered by schema then name.
 func GetTables(ctx context.Context, db *pgx.Conn) ([]Table, error) {
 	var tables []Table
 	err := pgxscan.Select(ctx, db, &tables, `

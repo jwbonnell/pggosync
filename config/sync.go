@@ -24,6 +24,7 @@ type SyncConfig struct {
 	Groups      map[string]Group `yaml:"groups"`
 }
 
+// GetSyncConfig reads and unmarshals a sync config YAML file, returning a descriptive error on missing or invalid files.
 func GetSyncConfig(syncConfigPath string) (SyncConfig, error) {
 	var syncConfig SyncConfig
 

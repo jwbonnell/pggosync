@@ -16,6 +16,7 @@ type TableSync struct {
 	destination *datasource.ReadWriteDatasource
 }
 
+// NewTableSync creates a TableSync holding references to both datasources.
 func NewTableSync(source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource) *TableSync {
 	return &TableSync{
 		source:      source,
@@ -94,6 +95,7 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 	return rows, nil
 }
 
+// syncSequences copies current sequence last_values from source to destination for all sequences owned by the task's table.
 func (t *TableSync) syncSequences(ctx context.Context, task *Task) error {
 	for _, seq := range task.SourceSequences {
 		val, err := t.source.GetSequenceValue(ctx, seq.SequenceSchema, seq.Sequence)

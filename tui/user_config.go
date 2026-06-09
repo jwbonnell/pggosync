@@ -28,6 +28,7 @@ func (i connectionListItem) Title() string       { return i.name }
 func (i connectionListItem) Description() string { return i.connString }
 func (i connectionListItem) FilterValue() string { return i.name }
 
+// maskedConnString formats a connection as a postgres:// URL with the password replaced by ***.
 func maskedConnString(c config.ConnectionConfig) string {
 	userInfo := c.User
 	if c.Password != "" {
@@ -62,6 +63,7 @@ type userConfigModel struct {
 	sslmode  string
 }
 
+// newUserConfigModel creates the connection management screen with the connection list pre-loaded.
 func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
 	m := userConfigModel{
 		handler: handler,
@@ -71,6 +73,7 @@ func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
 	return m
 }
 
+// buildList fetches all saved connections and constructs a list that includes a "(+ New connection)" entry at the top.
 func (m *userConfigModel) buildList() list.Model {
 	conns, _ := m.handler.ListConnections()
 
@@ -93,6 +96,7 @@ func (m *userConfigModel) buildList() list.Model {
 	return l
 }
 
+// buildConnectionForm creates the Huh form for creating or editing a connection; pre-populates fields when existing is non-nil.
 func (m *userConfigModel) buildConnectionForm(name string, existing *config.ConnectionConfig) *huh.Form {
 	if existing != nil {
 		m.connName = name
@@ -154,10 +158,12 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 	)
 }
 
+// Init satisfies tea.Model; the connection list needs no initial command.
 func (m userConfigModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update routes messages between the list phase (browse) and form phase (create/edit).
 func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -205,6 +211,7 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 	return m, cmd
 }
 
+// handleListSelect opens a blank form for the new-connection entry or a pre-populated form for an existing one.
 func (m userConfigModel) handleListSelect() (userConfigModel, tea.Cmd) {
 	item, ok := m.list.SelectedItem().(connectionListItem)
 	if !ok {
@@ -224,6 +231,7 @@ func (m userConfigModel) handleListSelect() (userConfigModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
+// openNewForm resets editingName and switches to a blank connection form.
 func (m userConfigModel) openNewForm() (userConfigModel, tea.Cmd) {
 	m.editingName = ""
 	m.phase = ucPhaseForm
@@ -231,6 +239,7 @@ func (m userConfigModel) openNewForm() (userConfigModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
+// saveConnection validates form fields, persists the connection config, and returns to the list.
 func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 	name := strings.TrimSpace(m.connName)
 	if name == "" && m.editingName != "" {

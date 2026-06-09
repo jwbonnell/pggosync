@@ -24,6 +24,7 @@ type TaskResolver struct {
 	excluded         []db.Table
 }
 
+// NewTaskResolver creates a TaskResolver with all sync options baked in for use across multiple Resolve calls.
 func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]config.Group, truncate bool, preserve bool, deferConstraints bool, disableTriggers bool, excluded []db.Table) *TaskResolver {
 	return &TaskResolver{
 		source:           source,
@@ -36,6 +37,8 @@ func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasourc
 		excluded:         excluded}
 }
 
+// Resolve expands group and table args into a []Task with columns, PKs, and sequences loaded.
+// Falls back to all shared tables when neither groups nor tables are specified.
 func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableArgs []string) ([]Task, error) {
 	var tasks []Task
 
@@ -138,6 +141,7 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 	return tasks, nil
 }
 
+// groupToTasks converts a single group arg (with optional params) into tasks, substituting params into filters.
 func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 	groupID, params, err := opts.ParseGroupArg(groupArg)
 	if err != nil {
@@ -178,6 +182,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 	return tasks, nil
 }
 
+// tableToTasks converts an explicit --table arg into a Task; errors if the table appears on the exclusion list.
 func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Task, error) {
 	schema, tableName, filter, err := opts.ParseTableArg(tableArgs)
 	if err != nil {
@@ -196,6 +201,7 @@ func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Tas
 	}, nil
 }
 
+// loadColumns fetches columns from both datasources and returns two maps keyed by "schema.table".
 func (tr *TaskResolver) loadColumns(ctx context.Context) (map[string][]db.Column, map[string][]db.Column, error) {
 	sourceColumns, err := tr.source.GetColumns(ctx)
 	if err != nil {
@@ -222,6 +228,7 @@ func (tr *TaskResolver) loadColumns(ctx context.Context) (map[string][]db.Column
 	return sourceMap, destMap, nil
 }
 
+// loadPrimaryKeys fetches destination PKs and returns a map keyed by "schema.table".
 func (tr *TaskResolver) loadPrimaryKeys(ctx context.Context) (map[string][]db.PrimaryKey, error) {
 	pks, err := tr.destination.GetPrimaryKeys(ctx)
 	if err != nil {
@@ -237,6 +244,7 @@ func (tr *TaskResolver) loadPrimaryKeys(ctx context.Context) (map[string][]db.Pr
 	return pkMap, nil
 }
 
+// loadSequences fetches sequences from both datasources and returns two maps keyed by "schema.table".
 func (tr *TaskResolver) loadSequences(ctx context.Context) (map[string][]db.Sequence, map[string][]db.Sequence, error) {
 	sourceSeq, err := tr.source.GetSequences(ctx)
 	if err != nil {
@@ -263,6 +271,7 @@ func (tr *TaskResolver) loadSequences(ctx context.Context) (map[string][]db.Sequ
 	return sourceMap, destMap, nil
 }
 
+// confirmTablesExist returns an error naming the first table absent from the given datasource.
 func confirmTablesExist(ds datasource.ReadDataSource, tasks []Task) error {
 	for i := range tasks {
 		if !ds.TableExists(tasks[i].Table) {

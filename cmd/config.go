@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// configCmd returns a CLI command with subcommands for inspecting saved connection configs.
 func configCmd(handler *config.UserConfigHandler) *cli.Command {
 	return &cli.Command{
 		Name:    "config",

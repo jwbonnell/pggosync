@@ -7,6 +7,7 @@ import (
 	"github.com/jwbonnell/pggosync/db"
 )
 
+// FilterTables returns tables with any entry from excluded removed.
 func FilterTables(tables []db.Table, excluded []db.Table) []db.Table {
 	var out []db.Table
 	for _, t := range tables {
@@ -17,6 +18,7 @@ func FilterTables(tables []db.Table, excluded []db.Table) []db.Table {
 	return out
 }
 
+// GetSharedTables returns tables present in both source and destination after applying the exclusion list.
 func GetSharedTables(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, excluded []db.Table) []db.Table {
 	sourceTables := FilterTables(source.Tables, excluded)
 	destinationTables := FilterTables(destination.Tables, excluded)

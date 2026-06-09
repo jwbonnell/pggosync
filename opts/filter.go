@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// ApplyParamToFilter substitutes {1}, {2}, … placeholders in a WHERE clause with the corresponding positional params.
 func ApplyParamToFilter(params []string, filter string) string {
 	if len(params) == 0 {
 		return filter

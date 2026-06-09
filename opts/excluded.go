@@ -2,6 +2,7 @@ package opts
 
 import "github.com/jwbonnell/pggosync/db"
 
+// ProcessExcludedArgs converts a slice of "schema.table" strings into db.Table values.
 func ProcessExcludedArgs(args []string) ([]db.Table, error) {
 	var excludedTables []db.Table
 	for _, arg := range args {

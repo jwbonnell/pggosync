@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -109,12 +110,14 @@ func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 	return m
 }
 
+// Init satisfies tea.Model by initialising the first phase's form.
 func (m syncWizardModel) Init() tea.Cmd {
 	return m.form.Init()
 }
 
 // ── Form builders ──────────────────────────────────────────────────────────────
 
+// buildPickConnectionForm creates a dropdown of all saved connections, writing the selection into target.
 func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *string) *huh.Form {
 	conns, _ := m.handler.ListConnections()
 	options := make([]huh.Option[string], len(conns))
@@ -135,6 +138,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 	)
 }
 
+// buildSyncFileForm creates the sync config path input form.
 func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
@@ -147,6 +151,7 @@ func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
 	)
 }
 
+// buildGroupsForm creates a multi-select of all groups in the loaded sync config plus a free-text table input.
 func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 	groupKeys := make([]huh.Option[string], 0, len(m.syncConfig.Groups))
 	for name := range m.syncConfig.Groups {
@@ -177,6 +182,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 	)
 }
 
+// buildOptionsForm creates the full sync-options form (truncate, preserve, constraints, triggers, concurrency, dry-run, safety).
 func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	m.concurrencyStr = fmt.Sprintf("%d", m.options.concurrency)
 	return huh.NewForm(
@@ -221,6 +227,7 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 
 // ── Update ─────────────────────────────────────────────────────────────────────
 
+// Update handles all wizard phases: form completion, live sync output streaming, spinner ticks, and key bindings.
 func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -304,6 +311,7 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 	return m, cmd
 }
 
+// handlePreviewKey processes keystrokes on the preview screen: Enter/y starts the sync, Esc/b goes back to options.
 func (m syncWizardModel) handlePreviewKey(msg tea.KeyMsg) (syncWizardModel, tea.Cmd) {
 	switch msg.String() {
 	case "enter", "y":
@@ -318,6 +326,7 @@ func (m syncWizardModel) handlePreviewKey(msg tea.KeyMsg) (syncWizardModel, tea.
 	return m, cmd
 }
 
+// goBack navigates to the previous wizard phase, rebuilding the appropriate form.
 func (m syncWizardModel) goBack() (syncWizardModel, tea.Cmd) {
 	switch m.phase {
 	case phasePickSource:
@@ -340,6 +349,7 @@ func (m syncWizardModel) goBack() (syncWizardModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
+// advancePhase moves to the next phase after a form completes, loading the sync config at the file-pick step.
 func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 	switch m.phase {
 	case phasePickSource:
@@ -379,6 +389,7 @@ func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 	return m, nil
 }
 
+// buildTableArgs splits the comma-separated rawTableInput into individual table arguments.
 func (m syncWizardModel) buildTableArgs() []string {
 	var args []string
 	for _, p := range strings.Split(m.rawTableInput, ",") {
@@ -389,6 +400,7 @@ func (m syncWizardModel) buildTableArgs() []string {
 	return args
 }
 
+// buildPreview resolves tasks against both databases and renders a summary viewport for the user to confirm.
 func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	srcConn, err := m.handler.GetConnection(m.selectedSource)
 	if err != nil {
@@ -462,6 +474,7 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	return m, nil
 }
 
+// strategyLine formats the active sync strategy flags as a single display line for the preview screen.
 func strategyLine(o syncOptions) string {
 	var parts []string
 	if o.truncate {
@@ -482,6 +495,7 @@ func strategyLine(o syncOptions) string {
 	return fmt.Sprintf("  Strategy:    %s\n", strings.Join(parts, ", "))
 }
 
+// startSync launches the sync in a background goroutine, piping its output into the running viewport via readSyncLine.
 func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	m.phase = phaseRunning
 	m.outputLines = nil
@@ -546,6 +560,8 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	return m, tea.Batch(m.spinner.Tick, readSyncLine(reader, resultCh))
 }
 
+// readSyncLine returns a Bubble Tea command that reads one line from the sync output pipe and posts it as a syncLineMsg,
+// or posts a syncDoneMsg when the pipe closes.
 func readSyncLine(r *bufio.Reader, resultCh <-chan sync.SyncResult) tea.Cmd {
 	return func() tea.Msg {
 		line, err := r.ReadString('\n')
@@ -560,6 +576,7 @@ func readSyncLine(r *bufio.Reader, resultCh <-chan sync.SyncResult) tea.Cmd {
 	}
 }
 
+// unwrapPipeErr converts normal pipe-close errors (EOF, ErrClosedPipe) to nil so they aren't shown as failures.
 func unwrapPipeErr(err error) error {
 	if err == io.EOF || errors.Is(err, io.ErrClosedPipe) {
 		return nil
@@ -567,6 +584,7 @@ func unwrapPipeErr(err error) error {
 	return err
 }
 
+// setupWizardDatasources connects to both databases; closes dest if source fails to avoid a connection leak.
 func setupWizardDatasources(src, dst *config.ConnectionConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource, error) {
 	dest, err := datasource.NewReadWriteDataSource("destination", url.URL{
 		Scheme:   "postgres",
@@ -592,6 +610,7 @@ func setupWizardDatasources(src, dst *config.ConnectionConfig) (*datasource.Read
 	return source, dest, nil
 }
 
+// sslmodeQuery returns a URL query string for the SSL mode, or an empty string when mode is unset.
 func sslmodeQuery(mode string) string {
 	if mode == "" {
 		return ""
@@ -609,6 +628,7 @@ var (
 	borderStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1).Margin(1, 2)
 )
 
+// View renders each wizard phase: connection picks, config file, groups/tables, options, preview, running output, and results.
 func (m syncWizardModel) View() string {
 	var sb strings.Builder
 

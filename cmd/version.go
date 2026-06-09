@@ -6,6 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// versionCmd returns a CLI command that prints the build string set at compile time.
 func versionCmd(build string) *cli.Command {
 	cmd := cli.Command{
 		Name:    "version",

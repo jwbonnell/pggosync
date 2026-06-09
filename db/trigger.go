@@ -15,6 +15,7 @@ type Trigger struct {
 	RelID     string `db:"tgrelid"`
 }
 
+// DisableUserTriggers disables each trigger with ALTER TABLE … DISABLE TRIGGER; call RestoreUserTriggers to re-enable.
 func DisableUserTriggers(ctx context.Context, db *pgx.Conn, triggers []Trigger) error {
 	var err error
 	for _, t := range triggers {
@@ -27,6 +28,7 @@ func DisableUserTriggers(ctx context.Context, db *pgx.Conn, triggers []Trigger) 
 	return nil
 }
 
+// RestoreUserTriggers re-enables every trigger that was disabled by DisableUserTriggers.
 func RestoreUserTriggers(ctx context.Context, db *pgx.Conn, triggers []Trigger) error {
 	var err error
 	for _, t := range triggers {

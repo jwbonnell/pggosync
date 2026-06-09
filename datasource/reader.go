@@ -38,6 +38,7 @@ type ReaderDataSource struct {
 	Debug  bool
 }
 
+// NewReadDataSource connects to the database, runs a status check, and pre-loads the table list into r.Tables.
 func NewReadDataSource(Name string, u url.URL) (*ReaderDataSource, error) {
 	var datasource ReaderDataSource
 	conn, err := pgx.Connect(context.Background(), u.String())
@@ -65,6 +66,7 @@ func NewReadDataSource(Name string, u url.URL) (*ReaderDataSource, error) {
 	return &datasource, nil
 }
 
+// GetTables fetches all non-system base tables from information_schema and caches them in r.Tables.
 func (r *ReaderDataSource) GetTables(ctx context.Context) ([]db.Table, error) {
 	var tables []db.Table
 	err := pgxscan.Select(ctx, r.DB, &tables, `
@@ -84,6 +86,7 @@ func (r *ReaderDataSource) GetTables(ctx context.Context) ([]db.Table, error) {
 	return tables, nil
 }
 
+// TableExists scans the in-memory Tables cache; GetTables must have been called first.
 func (r *ReaderDataSource) TableExists(table db.Table) bool {
 	for _, t := range r.Tables {
 		if table.Equal(t) {
@@ -93,6 +96,7 @@ func (r *ReaderDataSource) TableExists(table db.Table) bool {
 	return false
 }
 
+// GetSchemas returns all schema names including system schemas (pg_catalog, information_schema, etc.).
 func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
 	var schemas []string
 	err := pgxscan.Select(ctx, r.DB, &schemas, `SELECT schema_name FROM information_schema.schemata	ORDER BY 1`)
@@ -103,6 +107,7 @@ func (r *ReaderDataSource) GetSchemas(ctx context.Context) ([]string, error) {
 	return schemas, nil
 }
 
+// GetUserTriggers returns only non-internal triggers (tgisinternal = false), which are safe to disable during sync.
 func (r *ReaderDataSource) GetUserTriggers(ctx context.Context) ([]db.Trigger, error) {
 	var triggers []db.Trigger
 	err := pgxscan.Select(ctx, r.DB, &triggers, `
@@ -123,6 +128,7 @@ func (r *ReaderDataSource) GetUserTriggers(ctx context.Context) ([]db.Trigger, e
 	return triggers, nil
 }
 
+// StatusCheck pings with exponential back-off then runs a round-trip SELECT to confirm full connectivity.
 func (r *ReaderDataSource) StatusCheck(ctx context.Context) error {
 
 	// If the user doesn't give us a deadline set 1 seconr.
@@ -154,6 +160,7 @@ func (r *ReaderDataSource) StatusCheck(ctx context.Context) error {
 	return r.DB.QueryRow(context.Background(), "SELECT true").Scan(&tmp)
 }
 
+// GetNonDeferrableConstraints returns FK constraints that must be altered to DEFERRABLE before they can be deferred.
 func (r *ReaderDataSource) GetNonDeferrableConstraints(ctx context.Context) ([]db.NonDeferrableConstraints, error) {
 	var constraints []db.NonDeferrableConstraints
 	err := pgxscan.Select(ctx, r.DB, &constraints, `
@@ -174,6 +181,7 @@ func (r *ReaderDataSource) GetNonDeferrableConstraints(ctx context.Context) ([]d
 	return constraints, nil
 }
 
+// GetColumns fetches non-generated columns; names that are reserved SQL keywords (order, limit, offset) are double-quoted.
 func (r *ReaderDataSource) GetColumns(ctx context.Context) ([]db.Column, error) {
 	var cols []db.Column
 	err := pgxscan.Select(ctx, r.DB, &cols, `
@@ -200,6 +208,7 @@ func (r *ReaderDataSource) GetColumns(ctx context.Context) ([]db.Column, error) 
 	return cols, nil
 }
 
+// GetPrimaryKeys fetches primary key definitions from pg_index for all non-system schemas.
 func (r *ReaderDataSource) GetPrimaryKeys(ctx context.Context) ([]db.PrimaryKey, error) {
 	var pks []db.PrimaryKey
 	err := pgxscan.Select(ctx, r.DB, &pks, `
@@ -226,6 +235,7 @@ func (r *ReaderDataSource) GetPrimaryKeys(ctx context.Context) ([]db.PrimaryKey,
 	return pks, nil
 }
 
+// GetSequences fetches all sequences and their owning table/column relationships via pg_depend.
 func (r *ReaderDataSource) GetSequences(ctx context.Context) ([]db.Sequence, error) {
 	var sequences []db.Sequence
 	err := pgxscan.Select(ctx, r.DB, &sequences, `
@@ -250,6 +260,7 @@ func (r *ReaderDataSource) GetSequences(ctx context.Context) ([]db.Sequence, err
 	return sequences, nil
 }
 
+// GetSequenceValue reads the current last_value of a sequence without advancing it.
 func (r *ReaderDataSource) GetSequenceValue(ctx context.Context, schema, sequence string) (int64, error) {
 	var value int64
 	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT last_value FROM %s.%s", schema, sequence)).Scan(&value)
@@ -259,6 +270,7 @@ func (r *ReaderDataSource) GetSequenceValue(ctx context.Context, schema, sequenc
 	return value, nil
 }
 
+// GetRowCount issues a full COUNT(*); only call when an exact count is needed (e.g. the truncate confirmation banner).
 func (r *ReaderDataSource) GetRowCount(ctx context.Context, tableName string) (int64, error) {
 	var count int64
 	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
@@ -268,11 +280,13 @@ func (r *ReaderDataSource) GetRowCount(ctx context.Context, tableName string) (i
 	return count, nil
 }
 
+// IsLocalHost returns true when the connection URL targets localhost or 127.0.0.1, used for the safety check.
 func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
 	re := regexp.MustCompile(`postgres:\/\/.*:.*@(localhost|127\.0\.0\.1)`)
 	return re.MatchString(r.Url)
 }
 
+// GetName returns the datasource label (e.g. "source" or "destination") used in error messages.
 func (r *ReaderDataSource) GetName() string {
 	return r.Name
 }

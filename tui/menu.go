@@ -32,6 +32,7 @@ type menuItemDelegate struct {
 	list.DefaultDelegate
 }
 
+// newMenuItemDelegate creates a list delegate with the project's pink highlight colour.
 func newMenuItemDelegate() menuItemDelegate {
 	d := list.NewDefaultDelegate()
 	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(lipgloss.Color("205")).BorderForeground(lipgloss.Color("205"))
@@ -62,6 +63,7 @@ type menuModel struct {
 	list list.Model
 }
 
+// newMenuModel creates the main menu with its three navigation items.
 func newMenuModel() menuModel {
 	items := []list.Item{
 		menuItem{
@@ -91,10 +93,12 @@ func newMenuModel() menuModel {
 	return menuModel{list: l}
 }
 
+// Init satisfies tea.Model; the menu list needs no initial command.
 func (m menuModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles resize, Enter/Space to navigate to a screen, and q to quit.
 func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -119,6 +123,7 @@ func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 	return m, cmd
 }
 
+// View renders the menu list with document-style margins.
 func (m menuModel) View() string {
 	return docStyle.Render(strings.TrimRight(m.list.View(), "\n"))
 }

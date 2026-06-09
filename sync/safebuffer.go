@@ -17,12 +17,14 @@ type SafeBuffer struct {
 	doneErr error
 }
 
+// NewSafeBuffer wraps buf with a mutex and a freshly initialised condition variable.
 func NewSafeBuffer(buf io.ReadWriter) *SafeBuffer {
 	sb := &SafeBuffer{buf: buf}
 	sb.cond = sync.NewCond(&sb.mu)
 	return sb
 }
 
+// Write appends data to the underlying buffer under the lock and signals any blocked reader.
 func (b *SafeBuffer) Write(p []byte) (n int, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -31,6 +33,7 @@ func (b *SafeBuffer) Write(p []byte) (n int, err error) {
 	return
 }
 
+// Read returns available data; blocks when the buffer is empty but the writer has not yet called SetDone.
 func (b *SafeBuffer) Read(p []byte) (n int, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -49,6 +52,7 @@ func (b *SafeBuffer) Read(p []byte) (n int, err error) {
 	}
 }
 
+// SetDone signals that the writer finished successfully; the next Read after the buffer drains returns io.EOF.
 func (b *SafeBuffer) SetDone() {
 	b.mu.Lock()
 	b.done = true
@@ -56,6 +60,7 @@ func (b *SafeBuffer) SetDone() {
 	b.cond.Signal()
 }
 
+// SetDoneWithError signals that the writer finished with an error; the next Read after drain returns that error.
 func (b *SafeBuffer) SetDoneWithError(err error) {
 	b.mu.Lock()
 	b.done = true

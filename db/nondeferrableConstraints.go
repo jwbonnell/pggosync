@@ -13,6 +13,7 @@ type NonDeferrableConstraints struct {
 	ConstraintName string `db:"constraint_name"`
 }
 
+// DeferConstraints alters each constraint to DEFERRABLE then issues SET CONSTRAINTS ALL DEFERRED for the transaction.
 func DeferConstraints(ctx context.Context, db *pgx.Conn, ndc []NonDeferrableConstraints) error {
 	var err error
 	for _, n := range ndc {
@@ -31,6 +32,7 @@ func DeferConstraints(ctx context.Context, db *pgx.Conn, ndc []NonDeferrableCons
 	return nil
 }
 
+// RestoreContraints sets constraints IMMEDIATE then marks each altered constraint NOT DEFERRABLE, reversing DeferConstraints.
 func RestoreContraints(ctx context.Context, db *pgx.Conn, ndc []NonDeferrableConstraints) error {
 	_, err := db.Exec(ctx, "SET CONSTRAINTS ALL IMMEDIATE")
 	if err != nil {

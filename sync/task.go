@@ -24,6 +24,7 @@ type Task struct {
 	DestRowCount     int64
 }
 
+// GetDestPKs extracts just the column names from the destination PK definition.
 func (t *Task) GetDestPKs() []string {
 	var s []string
 	for i := range t.DestPK {
@@ -46,6 +47,7 @@ func (t *Task) ScrubColumns(cols []string) []string {
 	return result
 }
 
+// GetSharedColumnNames returns columns present in both source and destination; used to build the COPY column list.
 func (t *Task) GetSharedColumnNames() []string {
 	var s []string
 	for i := range t.DestColumns {

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// seedDummyTable appends rowCount generated rows to table, starting after the current MAX(id), for test setup.
 func seedDummyTable(ctx context.Context, db *pgx.Conn, table string, rowCount int) error {
 	start := 1
 	db.QueryRow(ctx, fmt.Sprintf("SELECT MAX(id) FROM %s", table)).Scan(&start)

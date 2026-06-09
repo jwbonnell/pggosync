@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// listCmd returns a CLI command that categorises tables as shared, source-only, or destination-only.
 func listCmd(handler *config.UserConfigHandler) *cli.Command {
 	return &cli.Command{
 		Name:    "list",
@@ -80,6 +81,7 @@ func listCmd(handler *config.UserConfigHandler) *cli.Command {
 	}
 }
 
+// tableSet builds a full-name→bool map for O(1) membership tests.
 func tableSet(tables []db.Table) map[string]bool {
 	s := make(map[string]bool, len(tables))
 	for _, t := range tables {
@@ -88,6 +90,7 @@ func tableSet(tables []db.Table) map[string]bool {
 	return s
 }
 
+// printSection prints a labelled block of table names; silently skips empty slices.
 func printSection(label string, names []string) {
 	if len(names) == 0 {
 		return

@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// syncCmd returns a CLI command that resolves tasks, prompts for confirmation, and runs the sync.
 func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 	return &cli.Command{
 		Name:  "sync",

@@ -15,6 +15,7 @@ type PathHandler interface {
 
 type OSPathHandler struct{}
 
+// UserConfigDir delegates to os.UserConfigDir to locate the OS-level user configuration directory.
 func (ph OSPathHandler) UserConfigDir() (string, error) {
 	return os.UserConfigDir()
 }
@@ -23,6 +24,7 @@ type UserConfigHandler struct {
 	PathHandler PathHandler
 }
 
+// NewUserConfigHandler creates a UserConfigHandler backed by the given PathHandler.
 func NewUserConfigHandler(pathHandler PathHandler) *UserConfigHandler {
 	return &UserConfigHandler{
 		PathHandler: pathHandler,
@@ -39,6 +41,7 @@ type ConnectionConfig struct {
 	SSLMode  string `yaml:"sslmode,omitempty"`
 }
 
+// configDir returns the pggosync-specific subdirectory inside the OS user config dir.
 func (uc *UserConfigHandler) configDir() (string, error) {
 	dir, err := uc.PathHandler.UserConfigDir()
 	if err != nil {
@@ -116,6 +119,7 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 	return names, nil
 }
 
+// defaultConnectionConfig returns a placeholder config; names that suggest a local destination default to port 5433.
 func defaultConnectionConfig(name string) ConnectionConfig {
 	port := 5432
 	if name == "dest" || name == "destination" || name == "local" {

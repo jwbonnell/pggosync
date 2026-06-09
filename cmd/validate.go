@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// validateCmd returns a CLI command that resolves tasks and reports what would be synced without running the sync.
 func validateCmd(handler *config.UserConfigHandler) *cli.Command {
 	return &cli.Command{
 		Name:  "validate",

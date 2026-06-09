@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// Execute builds the CLI app and runs it; when invoked with no subcommand it launches the TUI.
 func Execute(build string, args []string) {
 	handler := config.UserConfigHandler{
 		PathHandler: config.OSPathHandler{},
@@ -57,6 +58,7 @@ func resolveConnections(handler *config.UserConfigHandler, sourceName, destName 
 	return src, dst, nil
 }
 
+// setupDatasources opens connections to both databases and calls os.Exit(1) on any connection failure.
 func setupDatasources(src, dst *config.ConnectionConfig) (*datasource.ReaderDataSource, *datasource.ReadWriteDatasource) {
 	destination, err := datasource.NewReadWriteDataSource("destination", url.URL{
 		Scheme:   "postgres",
@@ -85,6 +87,7 @@ func setupDatasources(src, dst *config.ConnectionConfig) (*datasource.ReaderData
 	return source, destination
 }
 
+// sslmodeQuery returns a URL query string for the SSL mode, or an empty string when mode is unset.
 func sslmodeQuery(mode string) string {
 	if mode == "" {
 		return ""

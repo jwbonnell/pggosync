@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// ParseGroupArg parses "groupID" or "groupID:p1,p2,…" and returns the group ID and a positional params slice.
 func ParseGroupArg(arg string) (string, []string, error) {
 	groupID, params, err := parsePrimaryArg(arg)
 	if err != nil {
@@ -14,6 +15,7 @@ func ParseGroupArg(arg string) (string, []string, error) {
 	return groupID, strings.Split(params, ","), nil
 }
 
+// ParseTableArg parses "schema.table" or "schema.table:filter" and returns schema, table name, and optional filter.
 func ParseTableArg(arg string) (string, string, string, error) {
 	fullTableName, filter, err := parsePrimaryArg(arg)
 	if err != nil {
@@ -28,6 +30,7 @@ func ParseTableArg(arg string) (string, string, string, error) {
 	return schema, table, strings.Trim(filter, "\""), nil
 }
 
+// parsePrimaryArg splits on the first colon to separate the primary identifier from an optional secondary value.
 func parsePrimaryArg(arg string) (string, string, error) {
 	parts := strings.Split(arg, ":")
 	switch {
@@ -40,6 +43,7 @@ func parsePrimaryArg(arg string) (string, string, error) {
 	}
 }
 
+// ParseFullTableName returns schema and table from "schema.table"; defaults schema to "public" for bare table names.
 func ParseFullTableName(name string) (string, string, error) {
 	var schema, table string
 	parts := strings.Split(name, ".")

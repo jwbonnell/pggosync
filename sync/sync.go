@@ -26,6 +26,8 @@ type SyncResult struct {
 	Tables []TableResult
 }
 
+// Sync opens a single destination transaction, pre-fetches source rows into SafeBuffers concurrently (bounded by
+// concurrency), drains each buffer sequentially, and commits. Rolls back on any error or when dryRun is true.
 func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (SyncResult, error) {
 	bufs := make([]*SafeBuffer, len(tasks))
 	for i := range bufs {
@@ -188,6 +190,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	return result, nil
 }
 
+// FormatCount formats an integer with comma separators for human-readable output (e.g. 1,234,567).
 func FormatCount(n int64) string {
 	if n == 0 {
 		return "0"
@@ -203,6 +206,7 @@ func FormatCount(n int64) string {
 	return string(out)
 }
 
+// taskStrategy returns the display label for the copy strategy a task will use.
 func taskStrategy(t *Task) string {
 	if t.Truncate && !t.Preserve {
 		return "truncate"
@@ -213,6 +217,7 @@ func taskStrategy(t *Task) string {
 	return "upsert"
 }
 
+// getTables extracts the embedded db.Table from each task into a flat slice.
 func getTables(tasks []Task) []db.Table {
 	tables := make([]db.Table, len(tasks))
 	for i := range tasks {

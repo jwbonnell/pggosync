@@ -53,6 +53,7 @@ type syncConfigBuilderModel struct {
 	addAnotherGroup  bool
 }
 
+// newSyncConfigModel creates a blank sync config builder at the first phase.
 func newSyncConfigModel() syncConfigBuilderModel {
 	m := syncConfigBuilderModel{
 		phase: scPhaseMain,
@@ -61,6 +62,7 @@ func newSyncConfigModel() syncConfigBuilderModel {
 	return m
 }
 
+// buildMainForm creates the description and exclude-tables input form.
 func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
@@ -76,6 +78,7 @@ func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
 	)
 }
 
+// buildAddGroupForm creates the group-name input form and resets pendingGroupName.
 func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 	m.pendingGroupName = ""
 	return huh.NewForm(
@@ -88,6 +91,7 @@ func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 	)
 }
 
+// buildAddTableForm creates the table-name, filter, and add-another-table form for the current group.
 func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	m.pendingTableName = ""
 	m.pendingFilter = ""
@@ -109,6 +113,7 @@ func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	)
 }
 
+// buildSaveForm creates the add-another-group toggle and save-path input form.
 func (m *syncConfigBuilderModel) buildSaveForm() *huh.Form {
 	m.savePath = ""
 	m.addAnotherGroup = false
@@ -126,10 +131,12 @@ func (m *syncConfigBuilderModel) buildSaveForm() *huh.Form {
 	)
 }
 
+// Init satisfies tea.Model by initialising the current phase's form.
 func (m syncConfigBuilderModel) Init() tea.Cmd {
 	return m.form.Init()
 }
 
+// Update routes form completions to advance, aborts and Esc to goBack, and Enter on done to return to the menu.
 func (m syncConfigBuilderModel) Update(msg tea.Msg) (syncConfigBuilderModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -167,6 +174,7 @@ func (m syncConfigBuilderModel) Update(msg tea.Msg) (syncConfigBuilderModel, tea
 	return m, cmd
 }
 
+// goBack navigates to the previous phase, removing an empty pending group if the user backs out of table entry.
 func (m syncConfigBuilderModel) goBack() (syncConfigBuilderModel, tea.Cmd) {
 	switch m.phase {
 	case scPhaseMain:
@@ -191,6 +199,7 @@ func (m syncConfigBuilderModel) goBack() (syncConfigBuilderModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
+// advance moves the wizard forward: validates input, appends groups/tables, and transitions to the next phase.
 func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {
 	switch m.phase {
 	case scPhaseMain:
@@ -247,6 +256,7 @@ func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {
 	return m, nil
 }
 
+// writeYAML marshals the collected config to YAML and writes it to the user-supplied save path.
 func (m syncConfigBuilderModel) writeYAML() (syncConfigBuilderModel, tea.Cmd) {
 	savePath := strings.TrimSpace(m.savePath)
 	if savePath == "" {
@@ -310,6 +320,7 @@ func (m syncConfigBuilderModel) writeYAML() (syncConfigBuilderModel, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the current wizard phase with a title header, error/status messages, and the active form.
 func (m syncConfigBuilderModel) View() string {
 	var sb strings.Builder
 
@@ -357,6 +368,7 @@ func (m syncConfigBuilderModel) View() string {
 	return docStyle.Render(sb.String())
 }
 
+// summaryView formats the completed config as a compact YAML-like summary for the done screen.
 func summaryView(m syncConfigBuilderModel) string {
 	var sb strings.Builder
 	if m.description != "" {
