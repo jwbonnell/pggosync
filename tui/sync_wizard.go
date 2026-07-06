@@ -18,6 +18,7 @@ import (
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/sync"
+	"github.com/jwbonnell/pggosync/sync/data"
 )
 
 type wizardPhase int
@@ -111,6 +112,10 @@ type syncWizardModel struct {
 
 	// Phase 9 (save profile)
 	profileNameInput string
+
+	// Detail panel state
+	selectedTableIndex int
+	showDetailPanel    bool
 }
 
 type syncLineMsg string
@@ -125,11 +130,13 @@ func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	m := syncWizardModel{
-		handler:        handler,
-		phase:          phasePickSource,
-		spinner:        s,
-		options:        syncOptions{concurrency: 1},
-		concurrencyStr: "1",
+		handler:            handler,
+		phase:              phasePickSource,
+		spinner:            s,
+		options:            syncOptions{concurrency: 1},
+		concurrencyStr:     "1",
+		selectedTableIndex: 0,
+		showDetailPanel:    false,
 	}
 	m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
 	return m
@@ -285,6 +292,24 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 				if m.cancelSync != nil {
 					m.cancelSync()
 				}
+				return m, nil
+			}
+			switch msg.String() {
+			case "j", "down":
+				if m.selectedTableIndex < len(m.tasks)-1 {
+					m.selectedTableIndex++
+				}
+				return m, nil
+			case "k", "up":
+				if m.selectedTableIndex > 0 {
+					m.selectedTableIndex--
+				}
+				return m, nil
+			case "d", "enter":
+				if len(m.tasks) > 0 {
+					m.showDetailPanel = !m.showDetailPanel
+				}
+				return m, nil
 			}
 		default:
 			// Form phases: intercept esc before huh consumes it.
@@ -508,7 +533,15 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 		if t.SourceRowCount > 0 {
 			srcInfo = fmt.Sprintf("  ~%s rows", sync.FormatCount(t.SourceRowCount))
 		}
-		sb.WriteString(fmt.Sprintf("    %-40s [%s]%s%s\n", t.FullName(), strategy, rowInfo, srcInfo))
+		scrubInfo := ""
+		if len(t.ScrubRules) > 0 {
+			labels := make([]string, len(t.ScrubRules))
+			for j, r := range t.ScrubRules {
+				labels[j] = fmt.Sprintf("%s=%s", r.Column, data.RuleLabel(r.Rule))
+			}
+			scrubInfo = fmt.Sprintf("  [%s]", strings.Join(labels, ", "))
+		}
+		sb.WriteString(fmt.Sprintf("    %-40s [%s]%s%s%s\n", t.FullName(), strategy, rowInfo, srcInfo, scrubInfo))
 	}
 	sb.WriteString("\n  Press enter to start sync, esc to go back.\n")
 	m.previewContent = sb.String()
@@ -548,6 +581,8 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	m.tablesCompleted = 0
 	m.totalRowsSynced = 0
 	m.startTime = time.Now()
+	m.selectedTableIndex = 0
+	m.showDetailPanel = false
 
 	m.tableStates = make([]tableProgress, len(m.tasks))
 	m.tableIndex = make(map[string]int, len(m.tasks))
@@ -822,12 +857,94 @@ func (m syncWizardModel) buildHistoryEntry(syncErr error, result sync.SyncResult
 // ── View ───────────────────────────────────────────────────────────────────────
 
 var (
-	wizardTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
-	errorStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).MarginTop(1)
-	helpStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
-	successStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
-	borderStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1).Margin(1, 2)
+	wizardTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
+	errorStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).MarginTop(1)
+	helpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
+	successStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+	borderStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1).Margin(1, 2)
+	detailBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("205")).Padding(1, 2)
+	detailTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
+	detailKeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	detailValueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selectedRowStyle  = lipgloss.NewStyle().Background(lipgloss.Color("236"))
+	scrubStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("135")).Bold(true)
 )
+
+// renderDetailPanel renders a bordered detail box for the currently selected table.
+func (m syncWizardModel) renderDetailPanel() string {
+	if m.selectedTableIndex < 0 || m.selectedTableIndex >= len(m.tasks) {
+		return ""
+	}
+
+	task := m.tasks[m.selectedTableIndex]
+	st := m.tableStates[m.selectedTableIndex]
+
+	var sb strings.Builder
+	sb.WriteString(detailTitleStyle.Render(task.FullName()))
+	sb.WriteString("\n\n")
+
+	statusLabel := "queued"
+	statusColor := lipgloss.Color("240")
+	switch st.phase {
+	case tableDone:
+		statusLabel = "done"
+		statusColor = lipgloss.Color("42")
+	case tableFailed:
+		statusLabel = "failed"
+		statusColor = lipgloss.Color("196")
+	case tableWriting:
+		statusLabel = "writing"
+		statusColor = lipgloss.Color("205")
+	case tablePrefetching, tablePrefetchReady:
+		statusLabel = "prefetching"
+		statusColor = lipgloss.Color("33")
+	}
+	sb.WriteString(detailRow("Status", lipgloss.NewStyle().Foreground(statusColor).Render(statusLabel)))
+
+	strategy := "upsert"
+	if task.Truncate && !task.Preserve {
+		strategy = "truncate"
+	} else if task.Preserve {
+		strategy = "preserve"
+	}
+	sb.WriteString(detailRow("Strategy", strategy))
+
+	if task.SourceRowCount > 0 {
+		sb.WriteString(detailRow("Source rows", sync.FormatCount(task.SourceRowCount)))
+	}
+	if task.DestRowCount > 0 {
+		sb.WriteString(detailRow("Dest rows (before)", sync.FormatCount(task.DestRowCount)))
+	}
+	if st.rows > 0 {
+		sb.WriteString(detailRow("Rows synced", sync.FormatCount(st.rows)))
+	}
+	if st.elapsed > 0 {
+		sb.WriteString(detailRow("Elapsed", st.elapsed.Round(time.Millisecond).String()))
+	}
+	if task.Filter != "" {
+		sb.WriteString(detailRow("Filter", task.Filter))
+	}
+	if len(task.ScrubRules) > 0 {
+		sb.WriteString(detailKeyStyle.Render("Scrub rules:\n"))
+		for _, r := range task.ScrubRules {
+			sb.WriteString(fmt.Sprintf("    %s → %s\n", detailValueStyle.Render(r.Column), scrubStyle.Render(data.RuleLabel(r.Rule))))
+		}
+	}
+	if st.errMsg != "" {
+		sb.WriteString("\n")
+		sb.WriteString(detailKeyStyle.Render("Error:\n"))
+		sb.WriteString(errorStyle.Render(st.errMsg))
+	}
+
+	return detailBorderStyle.Render(sb.String())
+}
+
+// detailRow formats a key-value pair for the detail panel.
+func detailRow(key, value string) string {
+	return fmt.Sprintf("%s  %s\n", detailKeyStyle.Render(key+":"), detailValueStyle.Render(value))
+}
+
+// ── View ───────────────────────────────────────────────────────────────────────
 
 // View renders each wizard phase: connection picks, config file, groups/tables, options, preview, running output, and results.
 func (m syncWizardModel) View() string {
@@ -890,7 +1007,8 @@ func (m syncWizardModel) View() string {
 			label = "Dry run"
 		}
 		elapsed := time.Since(m.startTime).Round(time.Second)
-		sb.WriteString(wizardTitleStyle.Render(fmt.Sprintf("%s %s...  %s", m.spinner.View(), label, elapsed)))
+		header := wizardTitleStyle.Render(fmt.Sprintf("%s %s...  %s", m.spinner.View(), label, elapsed))
+		sb.WriteString(header)
 		sb.WriteString("\n\n")
 
 		// Progress bar
@@ -901,56 +1019,128 @@ func (m syncWizardModel) View() string {
 			filled = m.tablesCompleted * barWidth / total
 		}
 		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
-		sb.WriteString(fmt.Sprintf("  %d / %d tables  %s\n\n", m.tablesCompleted, total, bar))
+		progressLine := fmt.Sprintf("  %d / %d tables  %s\n", m.tablesCompleted, total, bar)
 
 		// Per-table status list (cap to available height)
 		maxRows := m.height - 10
+		if m.showDetailPanel && m.width >= 100 {
+			maxRows = m.height - 12
+		}
 		if maxRows < 4 {
 			maxRows = 4
 		}
-		shown := m.tasks
-		if len(shown) > maxRows {
-			shown = shown[:maxRows]
+		// Scroll the window so the selected row stays visible.
+		offset := 0
+		if len(m.tasks) > maxRows {
+			if m.selectedTableIndex >= maxRows {
+				offset = m.selectedTableIndex - maxRows + 1
+			}
+			if maxOffset := len(m.tasks) - maxRows; offset > maxOffset {
+				offset = maxOffset
+			}
 		}
-		for i, t := range shown {
-			var indicator, detail string
+		end := offset + maxRows
+		if end > len(m.tasks) {
+			end = len(m.tasks)
+		}
+
+		var tableList strings.Builder
+		if offset > 0 {
+			tableList.WriteString(fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("... %d more above", offset))))
+		}
+		for i := offset; i < end; i++ {
+			t := m.tasks[i]
 			st := m.tableStates[i]
+			var indicatorChar, detail string
+			var indicatorStyle lipgloss.Style
+			failed := false
 			switch st.phase {
 			case tableDone:
-				indicator = successStyle.Render("✓")
+				indicatorChar = "✓"
+				indicatorStyle = successStyle
 				detail = fmt.Sprintf("%s rows", sync.FormatCount(st.rows))
 				if t.SourceRowCount > 0 {
 					detail += fmt.Sprintf("  (~%s est.)", sync.FormatCount(t.SourceRowCount))
 				}
 			case tableFailed:
-				indicator = errorStyle.Render("✗")
-				detail = errorStyle.Render("FAILED: " + st.errMsg)
+				indicatorChar = "✗"
+				indicatorStyle = errorStyle
+				detail = "FAILED: " + st.errMsg
+				failed = true
 			case tableWriting:
-				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("●")
+				indicatorChar = "●"
+				indicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 				detail = "writing..."
 			case tablePrefetching, tablePrefetchReady:
-				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render("↓")
+				indicatorChar = "↓"
+				indicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
 				detail = "prefetching..."
 			default:
-				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("·")
+				indicatorChar = "·"
+				indicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 				detail = "queued"
 			}
-			sb.WriteString(fmt.Sprintf("  %s  %-40s  %s\n", indicator, t.FullName(), detail))
+			scrubBadge := ""
+			if len(t.ScrubRules) > 0 {
+				scrubBadge = " 🔒"
+			}
+			if i == m.selectedTableIndex {
+				// Plain text under a single background style; nested ANSI resets would cut the highlight short.
+				line := fmt.Sprintf("  %s  %-40s%s  %s", indicatorChar, t.FullName(), scrubBadge, detail)
+				tableList.WriteString(selectedRowStyle.Render(line) + "\n")
+			} else {
+				detailStyled := detail
+				if failed {
+					detailStyled = errorStyle.Render(detail)
+				}
+				badgeStyled := scrubBadge
+				if scrubBadge != "" {
+					badgeStyled = scrubStyle.Render(scrubBadge)
+				}
+				tableList.WriteString(fmt.Sprintf("  %s  %-40s%s  %s\n", indicatorStyle.Render(indicatorChar), t.FullName(), badgeStyled, detailStyled))
+			}
 		}
-		if len(m.tasks) > maxRows {
-			sb.WriteString(fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("... and %d more", len(m.tasks)-maxRows))))
+		if end < len(m.tasks) {
+			tableList.WriteString(fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("... and %d more", len(m.tasks)-end))))
 		}
 
 		// Footer stats
-		sb.WriteString("\n")
+		var statsLine string
 		if m.totalRowsSynced > 0 && elapsed.Seconds() >= 1 {
 			rps := float64(m.totalRowsSynced) / elapsed.Seconds()
-			sb.WriteString(fmt.Sprintf("  %s total rows · %s/sec\n", sync.FormatCount(m.totalRowsSynced), sync.FormatCount(int64(rps))))
+			statsLine = fmt.Sprintf("  %s total rows · %s/sec\n", sync.FormatCount(m.totalRowsSynced), sync.FormatCount(int64(rps)))
 		} else if m.totalRowsSynced > 0 {
-			sb.WriteString(fmt.Sprintf("  %s total rows\n", sync.FormatCount(m.totalRowsSynced)))
+			statsLine = fmt.Sprintf("  %s total rows\n", sync.FormatCount(m.totalRowsSynced))
 		}
-		sb.WriteString("\n")
-		sb.WriteString(helpStyle.Render("q: cancel sync"))
+
+		helpText := helpStyle.Render("j/k: navigate  d: detail  q: cancel sync")
+
+		// Compose layout
+		if m.showDetailPanel && m.width >= 100 && len(m.tasks) > 0 {
+			detailPanel := m.renderDetailPanel()
+			listWidth := m.width - lipgloss.Width(detailPanel) - 4
+			if listWidth < 40 {
+				listWidth = 40
+			}
+
+			leftPanel := progressLine + "\n" + tableList.String() + "\n" + statsLine
+			leftPanel = lipgloss.NewStyle().Width(listWidth).Render(leftPanel)
+
+			joined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, detailPanel)
+			sb.WriteString(joined)
+			sb.WriteString("\n")
+			sb.WriteString(helpText)
+		} else {
+			sb.WriteString(progressLine)
+			sb.WriteString("\n")
+			sb.WriteString(tableList.String())
+			if m.totalRowsSynced > 0 {
+				sb.WriteString("\n")
+				sb.WriteString(statsLine)
+			}
+			sb.WriteString("\n")
+			sb.WriteString(helpText)
+		}
 
 	case phaseResults:
 		if m.syncErr != nil {

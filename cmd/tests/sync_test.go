@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"crypto/md5"
+	"fmt"
 	"os"
 	"testing"
 
@@ -305,4 +307,46 @@ func TestSync_TableMulti(t *testing.T) {
 	assert.NoError(t, err)
 	assert.GreaterOrEqual(t, 1, len(country))
 	assert.Equal(t, "Country 1002", country[0].Name)
+}
+
+// TestSync_Scrub syncs `country` with a hash scrub rule on country_name and
+// verifies the destination receives MD5 digests instead of the source values.
+func TestSync_Scrub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode...skipping integration test")
+	}
+	ctx := context.Background()
+	db, err := pgx.Connect(ctx, "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	require.NoError(t, err)
+	defer func() {
+		if err := db.Close(ctx); err != nil {
+			t.Errorf("failed to close db: %v", err)
+		}
+	}()
+
+	args := os.Args[0:1]
+	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
+	args = append(args, "--config", "../../_configs/default.yml")
+	args = append(args, "--table")
+	args = append(args, "country::country_name=hash")
+	args = append(args, "--truncate")
+	args = append(args, "--skip-confirmation")
+	cmd.Execute("test", args)
+
+	var country []Country
+	err = pgxscan.Select(ctx, db, &country, "SELECT * FROM country WHERE country_id = 1002")
+	assert.NoError(t, err)
+	require.Equal(t, 1, len(country))
+	assert.Equal(t, fmt.Sprintf("%x", md5.Sum([]byte("Country 1002"))), country[0].Name)
+
+	// Restore real values so later tests see unscrubbed data.
+	args = os.Args[0:1]
+	args = append(args, "sync")
+	args = append(args, "--source", "source", "--dest", "dest")
+	args = append(args, "--config", "../../_configs/default.yml")
+	args = append(args, "--table", "country")
+	args = append(args, "--truncate")
+	args = append(args, "--skip-confirmation")
+	cmd.Execute("test", args)
 }

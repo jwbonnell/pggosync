@@ -7,11 +7,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type ScrubRule struct {
+	Column string `yaml:"column"`
+	Rule   string `yaml:"rule"`
+}
+
 type TableEntry struct {
-	Table    string `yaml:"table"`
-	Filter   string `yaml:"filter,omitempty"`
-	Truncate *bool  `yaml:"truncate,omitempty"`
-	Preserve *bool  `yaml:"preserve,omitempty"`
+	Table    string      `yaml:"table"`
+	Filter   string      `yaml:"filter,omitempty"`
+	Truncate *bool       `yaml:"truncate,omitempty"`
+	Preserve *bool       `yaml:"preserve,omitempty"`
+	Scrub    []ScrubRule `yaml:"scrub,omitempty"`
 }
 
 type Group struct {

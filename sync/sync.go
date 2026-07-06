@@ -56,13 +56,13 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 				defer func() { <-sem }()
 
 				task := &tasks[i]
-				cols := task.GetSharedColumnNames()
+				cols := task.GetSelectColumns()
 				filterClause := ""
 				if task.Filter != "" {
 					filterClause = "WHERE " + task.Filter
 				}
 				query := fmt.Sprintf("COPY (SELECT %s FROM %s %s) TO STDOUT",
-					strings.Join(cols, ","), task.FullName(), filterClause)
+					strings.Join(cols, ", "), task.FullName(), filterClause)
 
 				if !quiet {
 					logf("Prefetching %s...\n", task.FullName())

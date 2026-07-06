@@ -23,7 +23,7 @@ func TestGetTables(t *testing.T) {
 
 	tables, err := rd.GetTables(ctx)
 	assert.Nil(t, err)
-	assert.Len(t, tables, 12)
+	assert.Len(t, tables, 21)
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {
@@ -43,7 +43,7 @@ func TestGetSchemas(t *testing.T) {
 
 	schemas, err := rd.GetSchemas(ctx)
 	assert.Nil(t, err)
-	assert.Len(t, schemas, 4)
+	assert.Len(t, schemas, 6)
 	found := false
 	for i := range schemas {
 		if schemas[i] == "public" {
@@ -110,7 +110,7 @@ func TestGetNonDeferrableConstraints(t *testing.T) {
 
 	ndc, err := rd.GetNonDeferrableConstraints(ctx)
 	assert.Nil(t, err)
-	assert.Len(t, ndc, 7)
+	assert.Len(t, ndc, 19)
 
 	defer func() {
 		if err := rd.DB.Close(ctx); err != nil {

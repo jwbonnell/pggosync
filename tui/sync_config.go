@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jwbonnell/pggosync/config"
+	"github.com/jwbonnell/pggosync/sync/data"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,7 @@ const (
 	scPhaseMain syncConfigPhase = iota
 	scPhaseAddGroup
 	scPhaseAddTable
+	scPhaseAddScrub
 	scPhaseSave
 	scPhaseDone
 )
@@ -25,6 +27,7 @@ const (
 type syncConfigTable struct {
 	name   string
 	filter string
+	scrub  []config.ScrubRule
 }
 
 type syncConfigGroup struct {
@@ -51,6 +54,11 @@ type syncConfigBuilderModel struct {
 	pendingFilter    string
 	addAnotherTable  bool
 	addAnotherGroup  bool
+
+	// scrub rule flow
+	pendingScrubColumn string
+	pendingScrubRule   string
+	addAnotherScrub    bool
 }
 
 // newSyncConfigModel creates a blank sync config builder at the first phase.
@@ -91,11 +99,10 @@ func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 	)
 }
 
-// buildAddTableForm creates the table-name, filter, and add-another-table form for the current group.
+// buildAddTableForm creates the table-name and filter input form for the current group.
 func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	m.pendingTableName = ""
 	m.pendingFilter = ""
-	m.addAnotherTable = false
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -106,6 +113,44 @@ func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 				Title("Filter (optional)").
 				Description("SQL predicate, e.g. country_id = {1}").
 				Value(&m.pendingFilter),
+		),
+	)
+}
+
+// buildAddScrubForm creates the scrub rule entry form for the current table.
+func (m *syncConfigBuilderModel) buildAddScrubForm() *huh.Form {
+	m.pendingScrubColumn = ""
+	m.pendingScrubRule = ""
+	m.addAnotherScrub = false
+
+	ruleOptions := make([]huh.Option[string], len(data.SupportedRules))
+	for i, r := range data.SupportedRules {
+		ruleOptions[i] = huh.NewOption(r, r)
+	}
+
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Column to scrub").
+				Description("Column name in this table").
+				Value(&m.pendingScrubColumn),
+			huh.NewSelect[string]().
+				Title("Scrub rule").
+				Description("How to transform the column value").
+				Options(ruleOptions...).
+				Value(&m.pendingScrubRule),
+			huh.NewConfirm().
+				Title("Add another scrub rule to this table?").
+				Value(&m.addAnotherScrub),
+		),
+	)
+}
+
+// buildFinishTableForm asks whether to add another table after scrub rules are done.
+func (m *syncConfigBuilderModel) buildFinishTableForm() *huh.Form {
+	m.addAnotherTable = false
+	return huh.NewForm(
+		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Add another table to this group?").
 				Value(&m.addAnotherTable),
@@ -113,14 +158,19 @@ func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	)
 }
 
-// buildSaveForm creates the add-another-group toggle and save-path input form.
+// buildSaveForm creates the finish form: add another table?, add another group?, and save path.
 func (m *syncConfigBuilderModel) buildSaveForm() *huh.Form {
 	m.savePath = ""
 	m.addAnotherGroup = false
+	m.addAnotherTable = false
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
+				Title("Add another table to this group?").
+				Value(&m.addAnotherTable),
+			huh.NewConfirm().
 				Title("Add another group?").
+				Description("Only relevant if you chose not to add another table above.").
 				Value(&m.addAnotherGroup),
 			huh.NewInput().
 				Title("Save path").
@@ -189,6 +239,17 @@ func (m syncConfigBuilderModel) goBack() (syncConfigBuilderModel, tea.Cmd) {
 		}
 		m.phase = scPhaseAddGroup
 		m.form = m.buildAddGroupForm()
+	case scPhaseAddScrub:
+		// The table was already appended when entering the scrub phase; pop it so
+		// re-entering the table form doesn't create a duplicate entry.
+		if len(m.groups) > 0 {
+			lastGroup := &m.groups[len(m.groups)-1]
+			if len(lastGroup.tables) > 0 {
+				lastGroup.tables = lastGroup.tables[:len(lastGroup.tables)-1]
+			}
+		}
+		m.phase = scPhaseAddTable
+		m.form = m.buildAddTableForm()
 	case scPhaseSave:
 		// Return to main so the user can review description/excludes; groups are kept.
 		m.phase = scPhaseMain
@@ -229,21 +290,42 @@ func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {
 			return m, m.form.Init()
 		}
 		m.err = ""
+		// Append table placeholder (scrub rules added in scrub phase)
 		lastGroup := &m.groups[len(m.groups)-1]
 		lastGroup.tables = append(lastGroup.tables, syncConfigTable{
 			name:   tableName,
 			filter: strings.TrimSpace(m.pendingFilter),
 		})
-		if m.addAnotherTable {
-			m.form = m.buildAddTableForm()
+		m.phase = scPhaseAddScrub
+		m.form = m.buildAddScrubForm()
+		return m, m.form.Init()
+
+	case scPhaseAddScrub:
+		col := strings.TrimSpace(m.pendingScrubColumn)
+		rule := strings.TrimSpace(m.pendingScrubRule)
+		if col != "" && rule != "" {
+			lastGroup := &m.groups[len(m.groups)-1]
+			lastTable := &lastGroup.tables[len(lastGroup.tables)-1]
+			lastTable.scrub = append(lastTable.scrub, config.ScrubRule{
+				Column: col,
+				Rule:   rule,
+			})
+		}
+		if m.addAnotherScrub {
+			m.form = m.buildAddScrubForm()
 			return m, m.form.Init()
 		}
-		// Done adding tables to this group — ask about another group + save path
+		// Done with scrub — ask about another table
 		m.phase = scPhaseSave
 		m.form = m.buildSaveForm()
 		return m, m.form.Init()
 
 	case scPhaseSave:
+		if m.addAnotherTable {
+			m.phase = scPhaseAddTable
+			m.form = m.buildAddTableForm()
+			return m, m.form.Init()
+		}
 		if m.addAnotherGroup {
 			m.phase = scPhaseAddGroup
 			m.form = m.buildAddGroupForm()
@@ -281,7 +363,11 @@ func (m syncConfigBuilderModel) writeYAML() (syncConfigBuilderModel, tea.Cmd) {
 		if len(g.tables) > 0 {
 			var entries []config.TableEntry
 			for _, t := range g.tables {
-				entries = append(entries, config.TableEntry{Table: t.name, Filter: t.filter})
+				entries = append(entries, config.TableEntry{
+					Table:  t.name,
+					Filter: t.filter,
+					Scrub:  t.scrub,
+				})
 			}
 			groups[g.name] = config.Group{Tables: entries}
 		}
@@ -349,6 +435,25 @@ func (m syncConfigBuilderModel) View() string {
 		}
 		sb.WriteString(m.form.View())
 
+	case scPhaseAddScrub:
+		lastGroup := m.groups[len(m.groups)-1]
+		lastTable := lastGroup.tables[len(lastGroup.tables)-1]
+		scrubInfo := ""
+		if len(lastTable.scrub) > 0 {
+			labels := make([]string, len(lastTable.scrub))
+			for j, r := range lastTable.scrub {
+				labels[j] = fmt.Sprintf("%s=%s", r.Column, data.RuleLabel(r.Rule))
+			}
+			scrubInfo = fmt.Sprintf("  [%s]", strings.Join(labels, ", "))
+		}
+		title := fmt.Sprintf("Build Sync Config — Scrub %s%s", lastTable.name, scrubInfo)
+		sb.WriteString(wizardTitleStyle.Render(title))
+		sb.WriteString("\n")
+		if m.err != "" {
+			sb.WriteString(errorStyle.Render(m.err) + "\n")
+		}
+		sb.WriteString(m.form.View())
+
 	case scPhaseSave:
 		sb.WriteString(wizardTitleStyle.Render("Build Sync Config — Finish"))
 		sb.WriteString("\n")
@@ -385,6 +490,15 @@ func summaryView(m syncConfigBuilderModel) string {
 	}
 	for _, g := range m.groups {
 		sb.WriteString(fmt.Sprintf("groups.%s: %d table(s)\n", g.name, len(g.tables)))
+		for _, t := range g.tables {
+			if len(t.scrub) > 0 {
+				labels := make([]string, len(t.scrub))
+				for j, r := range t.scrub {
+					labels[j] = fmt.Sprintf("%s=%s", r.Column, data.RuleLabel(r.Rule))
+				}
+				sb.WriteString(fmt.Sprintf("    %s [%s]\n", t.name, strings.Join(labels, ", ")))
+			}
+		}
 	}
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sb.String())
 }

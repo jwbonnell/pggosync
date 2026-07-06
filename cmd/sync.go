@@ -10,6 +10,7 @@ import (
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/opts"
 	"github.com/jwbonnell/pggosync/sync"
+	"github.com/jwbonnell/pggosync/sync/data"
 	"github.com/urfave/cli/v2"
 )
 
@@ -77,7 +78,7 @@ func syncCmd(handler *config.UserConfigHandler) *cli.Command {
 			&cli.StringSliceFlag{
 				Name:    "table",
 				Aliases: []string{"t"},
-				Usage:   "Tables to sync. Repeatable.",
+				Usage:   "Tables to sync. Format: schema.table[:filter][:col1=rule1,col2=rule2]. Repeatable.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "exclude",
@@ -284,7 +285,15 @@ Tables: %d
 							if t.Truncate && !t.Preserve {
 								rowInfo = fmt.Sprintf(" — %s dest rows will be deleted", sync.FormatCount(t.DestRowCount))
 							}
-							fmt.Printf("  %-40s [%s]%s\n", t.FullName(), strategy, rowInfo)
+							scrubInfo := ""
+							if len(t.ScrubRules) > 0 {
+								labels := make([]string, len(t.ScrubRules))
+								for j, r := range t.ScrubRules {
+									labels[j] = fmt.Sprintf("%s=%s", r.Column, data.RuleLabel(r.Rule))
+								}
+								scrubInfo = fmt.Sprintf("  scrub: [%s]", strings.Join(labels, ", "))
+							}
+							fmt.Printf("  %-40s [%s]%s%s\n", t.FullName(), strategy, rowInfo, scrubInfo)
 						}
 						fmt.Println()
 					default:

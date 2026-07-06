@@ -10,6 +10,7 @@ import (
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/db"
 	"github.com/jwbonnell/pggosync/opts"
+	"github.com/jwbonnell/pggosync/sync/data"
 	"github.com/jwbonnell/pggosync/sync/table"
 )
 
@@ -78,6 +79,10 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 		return nil, err
 	}
 
+	if err := validateScrubRules(tasks); err != nil {
+		return nil, err
+	}
+
 	sourceColumns, destinationColumns, err := tr.loadColumns(ctx)
 	if err != nil {
 		return nil, err
@@ -118,6 +123,10 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 		if ok {
 			tasks[i].SourceSequences = sourceSeq
 		}
+	}
+
+	if err := validateScrubColumns(tasks); err != nil {
+		return nil, err
 	}
 
 	var missingPK []string
@@ -177,6 +186,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 			Preserve:         preserve,
 			Truncate:         truncate,
 			DeferConstraints: tr.deferConstraints,
+			ScrubRules:       entry.Scrub,
 		})
 	}
 	return tasks, nil
@@ -184,20 +194,21 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 
 // tableToTasks converts an explicit --table arg into a Task; errors if the table appears on the exclusion list.
 func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Task, error) {
-	schema, tableName, filter, err := opts.ParseTableArg(tableArgs)
+	parsed, err := opts.ParseTableArgWithScrub(tableArgs)
 	if err != nil {
 		return Task{}, err
 	}
 
-	t := db.Table{Schema: schema, Name: tableName}
+	t := db.Table{Schema: parsed.Schema, Name: parsed.Table}
 	if len(excluded) > 0 && len(table.FilterTables([]db.Table{t}, excluded)) == 0 {
 		return Task{}, fmt.Errorf("supplied table %s is in the excluded list", tableArgs)
 	}
 
 	return Task{
-		Table:    t,
-		Filter:   filter,
-		Truncate: true,
+		Table:      t,
+		Filter:     parsed.Filter,
+		Truncate:   true,
+		ScrubRules: parsed.ScrubRules,
 	}, nil
 }
 
@@ -276,6 +287,51 @@ func confirmTablesExist(ds datasource.ReadDataSource, tasks []Task) error {
 	for i := range tasks {
 		if !ds.TableExists(tasks[i].Table) {
 			return fmt.Errorf("table %s does not exist in datasource %s", tasks[i].Table.FullName(), ds.GetName())
+		}
+	}
+	return nil
+}
+
+// validateScrubRules checks that every scrub rule on every task uses a supported rule ID.
+func validateScrubRules(tasks []Task) error {
+	for _, task := range tasks {
+		for _, rule := range task.ScrubRules {
+			if !data.IsValidRule(rule.Rule) {
+				return fmt.Errorf("table %s: unsupported scrub rule %q (valid: %s)", task.FullName(), rule.Rule, strings.Join(data.SupportedRules, ", "))
+			}
+			if rule.Column == "" {
+				return fmt.Errorf("table %s: scrub rule missing column name", task.FullName())
+			}
+		}
+	}
+	return nil
+}
+
+// validateScrubColumns checks, after column and PK metadata is loaded, that every scrub rule
+// targets an existing shared column and never a primary key column. A misspelled column would
+// otherwise silently sync unscrubbed data; a scrubbed PK would break upsert conflict detection.
+func validateScrubColumns(tasks []Task) error {
+	for _, task := range tasks {
+		if len(task.ScrubRules) == 0 {
+			continue
+		}
+
+		shared := make(map[string]bool)
+		for _, col := range task.GetSharedColumnNames() {
+			shared[strings.Trim(col, `"`)] = true
+		}
+		pks := make(map[string]bool)
+		for _, pk := range task.GetDestPKs() {
+			pks[strings.Trim(pk, `"`)] = true
+		}
+
+		for _, rule := range task.ScrubRules {
+			if !shared[rule.Column] {
+				return fmt.Errorf("table %s: scrub column %q does not exist in both source and destination", task.FullName(), rule.Column)
+			}
+			if pks[rule.Column] {
+				return fmt.Errorf("table %s: scrub column %q is a primary key column and cannot be scrubbed", task.FullName(), rule.Column)
+			}
 		}
 	}
 	return nil
