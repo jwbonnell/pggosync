@@ -29,7 +29,7 @@ func TestConfigHandler_InitConnection(t *testing.T) {
 	conn, err := handler.GetConnection("taco")
 	assert.NoError(t, err)
 	assert.Equal(t, "localhost", conn.Host)
-	assert.Equal(t, 5432, conn.Port)
+	assert.Equal(t, 5444, conn.Port)
 }
 
 func TestConfigHandler_GetConnection_Missing(t *testing.T) {

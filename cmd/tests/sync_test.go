@@ -18,10 +18,10 @@ import (
 func TestMain(m *testing.M) {
 	handler := config.UserConfigHandler{PathHandler: config.OSPathHandler{}}
 	_ = handler.SaveConnection("source", config.ConnectionConfig{
-		Host: "localhost", Port: 5432, Database: "postgres", User: "source_user", Password: "source_pw",
+		Host: "localhost", Port: 5444, Database: "postgres", User: "source_user", Password: "source_pw",
 	})
 	_ = handler.SaveConnection("dest", config.ConnectionConfig{
-		Host: "localhost", Port: 5433, Database: "postgres", User: "dest_user", Password: "dest_pw",
+		Host: "localhost", Port: 5445, Database: "postgres", User: "dest_user", Password: "dest_pw",
 	})
 	os.Exit(m.Run())
 }
@@ -44,7 +44,7 @@ func TestTruncate(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -74,7 +74,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -106,7 +106,7 @@ func TestTruncateDisableTriggers(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -139,7 +139,7 @@ func TestSync(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -169,7 +169,7 @@ func TestSync_Preserve(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -201,7 +201,7 @@ func TestSync_Table(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -230,7 +230,7 @@ func TestDryRun(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -277,7 +277,7 @@ func TestSync_TableMulti(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(context.Background(), "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {
@@ -316,7 +316,7 @@ func TestSync_Scrub(t *testing.T) {
 		t.Skip("short mode...skipping integration test")
 	}
 	ctx := context.Background()
-	db, err := pgx.Connect(ctx, "postgres://dest_user:dest_pw@localhost:5433/postgres")
+	db, err := pgx.Connect(ctx, "postgres://dest_user:dest_pw@localhost:5445/postgres")
 	require.NoError(t, err)
 	defer func() {
 		if err := db.Close(ctx); err != nil {

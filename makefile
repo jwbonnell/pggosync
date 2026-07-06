@@ -37,6 +37,18 @@ PSQL_DEST_CMD   := docker compose exec dest_db psql -h localhost -U dest_user -d
 # ==============================================================================
 # Dev Commands
 
+up:
+	docker compose up -d
+	docker compose logs -f
+
+down:
+	docker compose down
+
+build:
+	docker compose build
+
+rebuild: down build up
+
 test:
 	go test -count=1 -v ./... | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/''
 

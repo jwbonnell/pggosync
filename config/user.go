@@ -119,11 +119,11 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 	return names, nil
 }
 
-// defaultConnectionConfig returns a placeholder config; names that suggest a local destination default to port 5433.
+// defaultConnectionConfig returns a placeholder config; names that suggest a local destination default to port 5445.
 func defaultConnectionConfig(name string) ConnectionConfig {
-	port := 5432
+	port := 5444
 	if name == "dest" || name == "destination" || name == "local" {
-		port = 5433
+		port = 5445
 	}
 	return ConnectionConfig{
 		Host:     "localhost",

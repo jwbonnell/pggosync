@@ -74,7 +74,7 @@ Each connection is a YAML file stored in `$XDG_CONFIG_DIR/pggosync/<name>.yaml`.
 
 ```yaml
 host: localhost
-port: 5432
+port: 5444
 database: mydb
 user: myuser
 password: secret
@@ -320,8 +320,8 @@ Source pre-fetching is concurrent; destination writes are strictly sequential (o
 docker compose up -d
 
 # Verify they're reachable
-psql postgresql://postgres:postgres@localhost:5432/postgres -c '\l'
-psql postgresql://postgres:postgres@localhost:5433/postgres -c '\l'
+psql postgresql://postgres:postgres@localhost:5444/postgres -c '\l'
+psql postgresql://postgres:postgres@localhost:5445/postgres -c '\l'
 ```
 
 ### Running tests
@@ -338,8 +338,8 @@ go test -count=1 -v -run TestName ./path/to/package/...
 ```
 
 Integration tests live in `cmd/tests/` and connect directly to:
-- Source: `localhost:5432`
-- Destination: `localhost:5433`
+- Source: `localhost:5444`
+- Destination: `localhost:5445`
 
 Most skip automatically under `-short`; `TestTruncate` is the exception and always runs.
 

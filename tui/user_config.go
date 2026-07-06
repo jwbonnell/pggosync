@@ -112,7 +112,7 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 	} else {
 		m.connName = ""
 		m.host = "localhost"
-		m.port = "5432"
+		m.port = "5444"
 		m.database = "postgres"
 		m.user = ""
 		m.password = ""

@@ -28,7 +28,7 @@ docker compose up -d
 make reset-docker-databases
 ```
 
-Integration tests in `cmd/tests/` connect to the Docker databases directly (source: `localhost:5432`, dest: `localhost:5433`). Most skip automatically with `-short`; `TestTruncate` does not.
+Integration tests in `cmd/tests/` connect to the Docker databases directly (source: `localhost:5444`, dest: `localhost:5445`). Most skip automatically with `-short`; `TestTruncate` does not.
 
 ## Architecture
 

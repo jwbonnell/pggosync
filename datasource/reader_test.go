@@ -122,7 +122,7 @@ func TestGetNonDeferrableConstraints(t *testing.T) {
 func getReadDataSource() (*ReaderDataSource, error) {
 	u := url.URL{
 		Scheme: "postgres",
-		Host:   "localhost:5432",
+		Host:   "localhost:5444",
 		User:   url.UserPassword("source_user", "source_pw"),
 		Path:   "postgres",
 	}
@@ -133,7 +133,7 @@ func getReadDataSource() (*ReaderDataSource, error) {
 func getReadWriterDataSource() (*ReadWriteDatasource, error) {
 	u := url.URL{
 		Scheme: "postgres",
-		Host:   "localhost:5433",
+		Host:   "localhost:5445",
 		User:   url.UserPassword("dest_user", "dest_pw"),
 		Path:   "postgres",
 	}
