@@ -11,6 +11,8 @@ A CLI tool for syncing data between two PostgreSQL databases. Inspired by [pgsyn
 - [Quick Start](#quick-start)
 - [Connection Management](#connection-management)
 - [Sync Config](#sync-config)
+- [Data Scrubbing](#data-scrubbing)
+- [Profiles](#profiles)
 - [Commands](#commands)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -19,7 +21,7 @@ A CLI tool for syncing data between two PostgreSQL databases. Inspired by [pgsyn
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - PostgreSQL 12+
 - Docker & Docker Compose (for integration tests only)
 
@@ -151,6 +153,77 @@ groups:
         preserve: true    # always preserve this table
 ```
 
+### Per-table scrub rules
+
+Each table entry can also anonymise columns on the way through (see [Data Scrubbing](#data-scrubbing)):
+
+```yaml
+groups:
+  users:
+    tables:
+      - table: public.users
+        scrub:
+          - column: email
+            rule: random_email
+          - column: ssn
+            rule: redact
+          - column: name
+            rule: "partial:3"
+```
+
+---
+
+## Data Scrubbing
+
+Scrubbing anonymises column values during the sync. The rule is compiled into a
+SQL expression that runs **on the source** inside the `COPY TO STDOUT` query, so
+raw values never leave the source database — only the transformed value is streamed
+to the destination.
+
+Configure scrub rules per table either in the sync config (`scrub:` block, above) or
+inline on a `--table` argument:
+
+```bash
+pggosync sync ... \
+  --table 'public.users::email=random_email,ssn=redact,name=partial:3'
+```
+
+The `--table` format is `schema.table[:filter][:col1=rule1,col2=rule2]`. Note the
+empty filter segment (`::`) when scrubbing without a WHERE filter.
+
+### Available rules
+
+| Rule | Result |
+|------|--------|
+| `hash` | `MD5(value)` |
+| `redact` | Constant `'***REDACTED***'` |
+| `null` | `NULL` |
+| `random_int` | Random integer 0–100000 |
+| `random_float` | Random `numeric(10,2)` 0–1000 |
+| `random_email` | `user<random>@example.com` |
+| `partial` / `partial:N` | First `N` chars (default 3) then `***` |
+| `static` / `static:value` | Constant `value` (default `***`) |
+
+Parameterised rules take their argument after a colon (`partial:5`, `static:test@example.com`).
+
+---
+
+## Profiles
+
+A profile is a saved, named bundle of sync options (source, dest, config file,
+groups, and flags). Profiles are stored as `profiles.json` in
+`$XDG_CONFIG_DIR/pggosync/` and are created and launched from the TUI's
+**Manage Profiles** screen.
+
+From the CLI, load a profile as defaults with `--profile`. Any explicit flag you
+also pass overrides the profile's stored value, so a profile makes `--source`,
+`--dest`, and `--config` optional:
+
+```bash
+pggosync sync --profile nightly-staging
+pggosync sync --profile nightly-staging --dry-run   # override just the dry-run flag
+```
+
 ---
 
 ## Commands
@@ -160,8 +233,12 @@ groups:
 Launches the interactive TUI. Navigate with arrow keys; Enter to select. Available screens:
 
 - **Run Sync** — guided wizard to configure and execute a sync
-- **Manage Connections** — create, view, and edit connection configs
+- **Manage Connections** — create, view, and switch connection configs
 - **Build Sync Config** — interactively compose a sync config YAML file
+- **Manage Profiles** — save and launch named sync configurations (see [Profiles](#profiles))
+
+The menu also shows a **last sync** summary line. TUI-run syncs are recorded to a
+rolling history file (`history.json`, last 20 runs) in `$XDG_CONFIG_DIR/pggosync/`.
 
 ### `pggosync sync`
 
@@ -173,11 +250,12 @@ pggosync sync --source <name> --dest <name> --config <path> [flags]
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--source` | `-s` | — | Source connection name **(required)** |
-| `--dest` | `-d` | — | Destination connection name **(required)** |
-| `--config` | `-c` | — | Path to sync config YAML **(required)** |
+| `--profile` | `-pr` | — | Load a saved [profile](#profiles) as defaults (explicit flags win) |
+| `--source` | `-s` | — | Source connection name **(required unless in profile)** |
+| `--dest` | `-d` | — | Destination connection name **(required unless in profile)** |
+| `--config` | `-c` | — | Path to sync config YAML **(required unless in profile)** |
 | `--group` | `-g` | — | Group(s) to sync. Repeatable. Format: `name` or `name:p1,p2` |
-| `--table` | `-t` | — | Explicit table(s) to sync. Repeatable. Format: `schema.table` or `schema.table:"filter"` |
+| `--table` | `-t` | — | Explicit table(s) to sync. Repeatable. Format: `schema.table[:filter][:col1=rule1,col2=rule2]` |
 | `--exclude` | `-e` | — | Table(s) to exclude. Repeatable. Format: `schema.table` |
 | `--truncate` | `-tr` | false | Clear destination table before inserting |
 | `--preserve` | `-p` | false | `ON CONFLICT DO NOTHING` — skip rows that already exist |
@@ -278,6 +356,7 @@ CLI flags + sync config YAML
     ├─ Optionally disables user triggers (ALTER TABLE … DISABLE TRIGGER)
     ├─ Launches pre-fetch goroutines: one per task, bounded by --concurrency
     │   Each goroutine streams COPY TO STDOUT from source into a SafeBuffer
+    │   (scrub rules are applied as SQL expressions inside this source query)
     ├─ Sequential write loop: drains each SafeBuffer into the transaction
     │   ├─ Truncate path: TRUNCATE/DELETE → COPY FROM STDIN
     │   └─ Upsert/preserve path: create temp table → COPY FROM STDIN → INSERT … ON CONFLICT
@@ -300,13 +379,13 @@ Source pre-fetching is concurrent; destination writes are strictly sequential (o
 | Package | Responsibility |
 |---------|---------------|
 | `cmd/` | CLI command definitions using `urfave/cli/v2` |
-| `config/` | Connection credentials (`user.go`) and sync config parsing (`sync.go`) |
+| `config/` | Connection credentials (`user.go`), sync config parsing (`sync.go`), and JSON-backed profiles (`profiles.go`) and sync history (`history.go`) |
 | `datasource/` | Read-only (`ReaderDataSource`) and read-write (`ReadWriteDatasource`) pgx connection wrappers |
 | `db/` | Pure types (`Table`, `Column`, `PrimaryKey`, `Sequence`, `Trigger`) and low-level SQL helpers |
-| `opts/` | Argument parsing for `--group name:params` and `--table schema.table:"filter"` |
+| `opts/` | Argument parsing for `--group name:params` and `--table schema.table[:filter][:col=rule]` |
 | `sync/` | `Task`, `TaskResolver`, `TableSync`, `SafeBuffer`, and the top-level `Sync` orchestrator |
 | `sync/table/` | Shared-table and exclusion-list filtering |
-| `sync/data/` | Data scrubbing helpers (placeholder, not yet functional) |
+| `sync/data/` | Data scrubbing rules — maps a rule ID to the SQL expression run on the source |
 | `tui/` | Interactive terminal UI built with Bubble Tea and Huh |
 
 ---
@@ -341,7 +420,7 @@ Integration tests live in `cmd/tests/` and connect directly to:
 - Source: `localhost:5444`
 - Destination: `localhost:5445`
 
-Most skip automatically under `-short`; `TestTruncate` is the exception and always runs.
+They skip automatically under `-short`, so `make test-short` runs only the unit tests.
 
 ### Resetting test databases
 

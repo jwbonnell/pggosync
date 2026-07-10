@@ -28,7 +28,7 @@ docker compose up -d
 make reset-docker-databases
 ```
 
-Integration tests in `cmd/tests/` connect to the Docker databases directly (source: `localhost:5444`, dest: `localhost:5445`). Most skip automatically with `-short`; `TestTruncate` does not.
+Integration tests in `cmd/tests/` connect to the Docker databases directly (source: `localhost:5444`, dest: `localhost:5445`) and skip automatically with `-short`.
 
 ## Architecture
 
@@ -36,7 +36,9 @@ Integration tests in `cmd/tests/` connect to the Docker databases directly (sour
 
 **User config** (connection credentials) is stored at `$XDG_CONFIG_DIR/pggosync/<name>.yaml`. A file named `default` in that directory holds the active config name. Managed via `pggosync init` / `pggosync config`. The `config.UserConfigHandler` handles all reads and writes to this directory.
 
-**Sync config** (groups and exclusions) is a YAML file passed at runtime via `--config`. It defines named groups of tables with optional SQL WHERE filters and a top-level `exclude` list. See `_configs/default.yml` for a reference example.
+**Sync config** (groups and exclusions) is a YAML file passed at runtime via `--config`. It defines named groups of tables with optional SQL WHERE filters, per-table scrub rules, and a top-level `exclude` list. See `_configs/default.yml` for a reference example.
+
+`config.UserConfigHandler` also manages two JSON files in the same config directory: `profiles.json` (saved sync profiles — see below) and `history.json` (a rolling record of the last 20 TUI-run syncs).
 
 ### Sync Config Groups and Param Substitution
 
@@ -50,17 +52,20 @@ CLI flags + sync config
         ▼
    TaskResolver.Resolve()
    ├─ Expands groups/tables into []Task
-   ├─ Loads columns, PKs, and sequences for each task
+   ├─ Loads columns, PKs, sequences, and scrub rules for each task
    └─ Returns []Task with full metadata
         │
         ▼
    sync.Sync()
    ├─ Opens a single destination transaction
    ├─ Optionally defers FK constraints or disables user triggers
-   ├─ Dispatches tasks via channel (maxConcurrency = 1)
-   ├─ Each task handled by TableSync.Sync()
-   └─ Commits or rolls back the transaction
+   ├─ Pre-fetches source rows concurrently (one goroutine per task, capped by --concurrency)
+   │   into SafeBuffers; scrub rules are applied as SQL expressions in the source COPY query
+   ├─ Drains each SafeBuffer sequentially via TableSync.SyncFromBuffer()
+   └─ Commits or rolls back (rollback on any task error or when --dry-run)
 ```
+
+Source pre-fetching is concurrent; destination writes are strictly sequential and share one transaction. `SafeBuffer` is a mutex/condition-variable pipe that lets a prefetch goroutine fill a buffer while the write loop drains it.
 
 ### TableSync: Two Copy Strategies
 
@@ -68,17 +73,27 @@ CLI flags + sync config
 
 **Upsert path** (default): copies source data into a temp table on the destination, then runs `INSERT ... ON CONFLICT DO UPDATE` (upsert) or `DO NOTHING` (with `--preserve`). Requires a primary key on the destination table.
 
+### Data Scrubbing
+
+Scrub rules anonymise column values during a sync. A rule ID (`hash`, `redact`, `null`, `random_int`, `random_float`, `random_email`, `partial[:n]`, `static[:value]`) maps to a SQL expression via `sync/data.SQLExpression`. The expression is spliced into the `SELECT` of the source-side `COPY TO STDOUT` query (`Task.GetSelectColumns`), so raw values never leave the source. Rules are configured per table in the sync config (`scrub:` block) or inline on `--table schema.table[:filter][:col=rule,...]`.
+
+### Profiles
+
+A `config.SyncProfile` is a named bundle of sync options (source, dest, config file, groups, flags) persisted in `profiles.json`. The CLI `--profile` flag loads one as defaults, filling only fields the user did not set explicitly (`cCtx.IsSet` guards in `cmd/sync.go`). Profiles are created and launched from the TUI's Manage Profiles screen. Note: schema sync (`sync/schemasync.go`) is an unfinished stub and is not wired into any command.
+
 ### Package Responsibilities
 
 | Package | Responsibility |
 |---|---|
-| `cmd/` | CLI command definitions using `urfave/cli/v2` |
-| `config/` | User config (credentials) and sync config (groups/filters) loading |
+| `cmd/` | CLI command definitions using `urfave/cli/v2` (`sync`, `validate`, `list`, `init`, `config`, `version`; no subcommand launches the TUI) |
+| `config/` | User config (credentials), sync config (groups/filters/scrub), plus JSON-backed profiles and sync history |
 | `datasource/` | `ReaderDataSource` (read-only pgx connection) and `ReadWriteDatasource` (embeds reader, adds writes) |
 | `db/` | Pure types (Table, Column, PrimaryKey, etc.) and low-level SQL helpers |
-| `opts/` | Argument parsing for `--group name:params` and `--table schema.table:"filter"` |
-| `sync/` | Task struct, TaskResolver, TableSync, and the top-level Sync orchestrator |
+| `opts/` | Argument parsing for `--group name:params` and `--table schema.table[:filter][:col=rule]` |
+| `sync/` | Task struct, TaskResolver, TableSync, SafeBuffer, and the top-level Sync orchestrator |
 | `sync/table/` | Table filtering (shared tables, exclusion lists) |
+| `sync/data/` | Scrub rule → SQL expression mapping |
+| `tui/` | Interactive terminal UI (Bubble Tea + Huh): sync wizard, connection manager, sync-config builder, profiles |
 
 ### Safety Check
 
