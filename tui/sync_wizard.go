@@ -180,7 +180,7 @@ func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
 			huh.NewInput().
 				Title("Sync config path").
 				Description("Path to the sync config YAML file").
-				Placeholder("_configs/default.yml").
+				Placeholder("_configs/configs/default.ym").
 				Value(&m.syncConfigPath),
 		),
 	)

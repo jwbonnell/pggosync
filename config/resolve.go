@@ -28,17 +28,30 @@ func looksLikePath(arg string) bool {
 		strings.HasSuffix(arg, ".yml")
 }
 
-// searchDirs returns the search directories for the given kind ("configs" or "profiles"),
-// project-local first.
+// searchDirs returns the search directories for the given kind ("configs" or "profiles"):
+// project-local first, then the user config dir, then any extra include paths from prefs.
+//
+// TODO: this ordering is also the precedence for duplicate bare names — earlier dirs win in
+// resolveNamed and shadow later ones in listNamed. Include paths are currently lowest priority
+// and there is no warning when a name is shadowed. Revisit whether include paths should be able
+// to outrank the defaults and whether collisions should be surfaced. See CLAUDE.md.
 func (uc *UserConfigHandler) searchDirs(kind string) ([]FoundFile, error) {
 	dir, err := uc.configDir()
 	if err != nil {
 		return nil, err
 	}
-	return []FoundFile{
+	dirs := []FoundFile{
 		{Path: filepath.Join(ProjectConfigDir, kind), Origin: "project"},
 		{Path: filepath.Join(dir, kind), Origin: "user"},
-	}, nil
+	}
+	includePaths, err := uc.IncludePaths()
+	if err != nil {
+		return nil, err
+	}
+	for _, base := range includePaths {
+		dirs = append(dirs, FoundFile{Path: filepath.Join(base, kind), Origin: "include"})
+	}
+	return dirs, nil
 }
 
 // resolveNamed resolves nameOrPath to an existing file: literal paths are used

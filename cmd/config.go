@@ -35,6 +35,49 @@ func configCmd(handler *config.UserConfigHandler) *cli.Command {
 				},
 			},
 			{
+				Name:  "paths",
+				Usage: "List the directories searched for sync configs and profiles",
+				Action: func(cCtx *cli.Context) error {
+					dir, err := handler.ConfigDir()
+					if err != nil {
+						return err
+					}
+					fmt.Println("Search paths (each holds configs/ and/or profiles/):")
+					fmt.Printf("  %-9s %s\n", "[project]", "./"+config.ProjectConfigDir)
+					fmt.Printf("  %-9s %s\n", "[user]", dir)
+					includes, err := handler.IncludePaths()
+					if err != nil {
+						return err
+					}
+					for _, p := range includes {
+						fmt.Printf("  %-9s %s\n", "[include]", p)
+					}
+					if len(includes) == 0 {
+						fmt.Println("\nNo extra include paths. Add one with 'pggosync config paths add <path>'.")
+					}
+					return nil
+				},
+				Subcommands: []*cli.Command{
+					{
+						Name:      "add",
+						Usage:     "Add an extra base directory to search for configs and profiles",
+						ArgsUsage: "<path>",
+						Action: func(cCtx *cli.Context) error {
+							path, err := requireSingleArg(cCtx, "path")
+							if err != nil {
+								return err
+							}
+							abs, err := handler.AddIncludePath(path)
+							if err != nil {
+								return err
+							}
+							fmt.Printf("Added include path %s\n", abs)
+							return nil
+						},
+					},
+				},
+			},
+			{
 				Name:      "validate",
 				Usage:     "Validate a sync config; with --source and --dest it also resolves tasks against both databases",
 				ArgsUsage: "<name-or-path>",

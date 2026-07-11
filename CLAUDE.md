@@ -36,9 +36,13 @@ Integration tests in `cmd/tests/` connect to the Docker databases directly (sour
 
 **User config** (connection credentials) is stored at `$XDG_CONFIG_DIR/pggosync/<name>.yaml`. Managed via `pggosync conn` (`init`, `new`, `list`, `get`, `test`). The `config.UserConfigHandler` handles all reads and writes to this directory.
 
-**Sync config** (groups and exclusions) is a YAML file referenced at runtime via `--config`, either by path or by bare name. Names are resolved by `config/resolve.go` against `./.pggosync/configs/` (project-local) then `$XDG_CONFIG_DIR/pggosync/configs/` (user-level). It defines named groups of tables with optional SQL WHERE filters, per-table scrub rules, and a top-level `exclude` list. See `_configs/default.yml` for a reference example.
+**Sync config** (groups and exclusions) is a YAML file referenced at runtime via `--config`, either by path or by bare name. Names are resolved by `config/resolve.go` against `./.pggosync/configs/` (project-local) then `$XDG_CONFIG_DIR/pggosync/configs/` (user-level), then any extra include paths (see below). It defines named groups of tables with optional SQL WHERE filters, per-table scrub rules, and a top-level `exclude` list. See `_configs/configs/default.ym` for a reference example.
 
-`config.UserConfigHandler` also manages sync profiles (one YAML file per profile — see below) and `history.json` (a rolling record of the last 20 TUI-run syncs) in the same config directory.
+`config.UserConfigHandler` also manages sync profiles (one YAML file per profile — see below), `history.json` (a rolling record of the last 20 TUI-run syncs), and `prefs.yaml` (general settings) in the same config directory.
+
+**Include paths** let users register extra base directories to search for configs and profiles. They are stored in `prefs.yaml` under `include.paths` (`config/prefs.go`) and appended to the search order after the project and user dirs (so the defaults shadow them). Managed via `pggosync config paths` (list) and `pggosync config paths add <path>`; `add` requires the path to exist and contain a `configs/` and/or `profiles/` subdirectory, and stores it as an absolute path.
+
+> **TODO — search-order / duplicate-name collisions:** The precedence of include paths only matters when the same bare config/profile name exists in more than one search dir. In that case `resolveNamed` returns the first match and `listNamed` shadows later dirs by name, so today the project dir wins over user, and user wins over include paths (include paths are lowest priority, in insertion order). Literal paths bypass search and are unaffected. This is not yet surfaced to the user — there is no warning on a shadowed name, and the precedence ordering is not configurable. Decide later whether explicitly-added include paths should be able to outrank the defaults and whether to warn on collisions. See `searchDirs` in `config/resolve.go`.
 
 ### Sync Config Groups and Param Substitution
 
