@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jwbonnell/pggosync/config"
@@ -43,12 +44,18 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 		Subcommands: []*cli.Command{
 			{
 				Name:      "init",
-				Usage:     "Create a connection config with placeholder defaults",
-				ArgsUsage: "<name>",
+				Usage:     "Create connection configs with placeholder defaults",
+				ArgsUsage: "[name]",
 				Action: func(cCtx *cli.Context) error {
 					name := cCtx.Args().First()
+					// No name: seed the default source/dest pair, never overwriting existing ones.
 					if name == "" {
-						name = "default"
+						created, err := handler.InitDefaultConnections()
+						if err != nil {
+							return err
+						}
+						fmt.Printf("Created connections %s with placeholder values \u2014 edit them or run 'pggosync conn new' for an interactive setup\n", strings.Join(created, " and "))
+						return nil
 					}
 					if err := handler.InitConnection(name); err != nil {
 						return err
@@ -82,7 +89,7 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 						return err
 					}
 					if len(conns) == 0 {
-						fmt.Println("No connections. Run 'pggosync conn init <name>' to create one.")
+						fmt.Println("No connections. Run 'pggosync conn init' to create the default source/dest pair.")
 						return nil
 					}
 					// Piped/scripted: keep the plain, stable list output.

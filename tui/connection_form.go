@@ -59,14 +59,20 @@ func (v *connectionFormValues) connection() (string, config.ConnectionConfig) {
 }
 
 // newConnectionForm builds the Huh form bound to v; placeholderName is shown on the
-// name field when editing an existing connection.
-func newConnectionForm(v *connectionFormValues, placeholderName string) *huh.Form {
+// name field when editing an existing connection. nameValidate, when non-nil, is an
+// extra check run against the (trimmed) name — used to reject names that would
+// overwrite an existing connection.
+func newConnectionForm(v *connectionFormValues, placeholderName string, nameValidate func(string) error) *huh.Form {
 	nameField := huh.NewInput().
 		Title("Connection name").
 		Description("Identifier for this connection").
 		Validate(func(s string) error {
-			if strings.TrimSpace(s) == "" {
+			s = strings.TrimSpace(s)
+			if s == "" {
 				return fmt.Errorf("connection name is required")
+			}
+			if nameValidate != nil {
+				return nameValidate(s)
 			}
 			return nil
 		}).
@@ -106,7 +112,17 @@ func newConnectionForm(v *connectionFormValues, placeholderName string) *huh.For
 // returns huh.ErrUserAborted.
 func RunConnectionForm(handler *config.UserConfigHandler) (string, error) {
 	v := newConnectionFormValues("", nil)
-	if err := newConnectionForm(v, "").Run(); err != nil {
+	rejectExisting := func(name string) error {
+		exists, err := handler.ConnectionExists(name)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return fmt.Errorf("connection %q already exists", name)
+		}
+		return nil
+	}
+	if err := newConnectionForm(v, "", rejectExisting).Run(); err != nil {
 		return "", err
 	}
 	name, conn := v.connection()

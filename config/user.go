@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -50,9 +51,64 @@ func (uc *UserConfigHandler) configDir() (string, error) {
 	return filepath.Join(dir, "pggosync"), nil
 }
 
-// InitConnection creates a placeholder connection file.
+// InitConnection creates a placeholder connection file. It refuses to overwrite an
+// existing connection so a stray `conn init` cannot clobber saved credentials.
 func (uc *UserConfigHandler) InitConnection(name string) error {
+	exists, err := uc.ConnectionExists(name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("connection %q already exists; choose a different name or edit it directly", name)
+	}
 	return uc.SaveConnection(name, defaultConnectionConfig(name))
+}
+
+// InitDefaultConnections creates the default "source"/"dest" connection pair. If that
+// pair is already taken it steps to the next free suffix (source1/dest1, source2/dest2, …)
+// so existing connections are never overwritten. It returns the names it created.
+func (uc *UserConfigHandler) InitDefaultConnections() ([]string, error) {
+	for i := 0; ; i++ {
+		suffix := ""
+		if i > 0 {
+			suffix = strconv.Itoa(i)
+		}
+		source, dest := "source"+suffix, "dest"+suffix
+		sourceExists, err := uc.ConnectionExists(source)
+		if err != nil {
+			return nil, err
+		}
+		destExists, err := uc.ConnectionExists(dest)
+		if err != nil {
+			return nil, err
+		}
+		if sourceExists || destExists {
+			continue
+		}
+		if err := uc.SaveConnection(source, defaultConnectionConfig(source)); err != nil {
+			return nil, err
+		}
+		if err := uc.SaveConnection(dest, defaultConnectionConfig(dest)); err != nil {
+			return nil, err
+		}
+		return []string{source, dest}, nil
+	}
+}
+
+// ConnectionExists reports whether a connection config with the given name is saved.
+func (uc *UserConfigHandler) ConnectionExists(name string) (bool, error) {
+	dir, err := uc.configDir()
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(filepath.Join(dir, fmt.Sprintf("%s.yaml", name)))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 // GetConnection loads a named connection config.
@@ -122,7 +178,7 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 // defaultConnectionConfig returns a placeholder config; names that suggest a local destination default to port 5445.
 func defaultConnectionConfig(name string) ConnectionConfig {
 	port := 5444
-	if name == "dest" || name == "destination" || name == "local" {
+	if strings.HasPrefix(name, "dest") || name == "destination" || name == "local" {
 		port = 5445
 	}
 	return ConnectionConfig{

@@ -90,10 +90,23 @@ func (m *userConfigModel) buildList() list.Model {
 func (m *userConfigModel) buildConnectionForm(name string, existing *config.ConnectionConfig) *huh.Form {
 	m.formValues = newConnectionFormValues(name, existing)
 	placeholder := ""
+	var nameValidate func(string) error
 	if existing != nil {
 		placeholder = name
+	} else {
+		// Creating a new connection: reject a name that already exists.
+		nameValidate = func(candidate string) error {
+			exists, err := m.handler.ConnectionExists(candidate)
+			if err != nil {
+				return err
+			}
+			if exists {
+				return fmt.Errorf("connection %q already exists", candidate)
+			}
+			return nil
+		}
 	}
-	return newConnectionForm(m.formValues, placeholder)
+	return newConnectionForm(m.formValues, placeholder, nameValidate)
 }
 
 // Init satisfies tea.Model; the connection list needs no initial command.

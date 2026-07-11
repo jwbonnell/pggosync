@@ -85,23 +85,23 @@ dev-init:
 
 # Truncate path: wipe destination tables, then COPY straight from source.
 dev-truncate: dev-init
-	$(DEV_RUN) --config default --group country_var_1:2 --truncate
+	$(DEV_RUN) --config ./_configs/default.yml --group country_var_1:2 --truncate
 
 # Upsert path (default): temp table + INSERT ... ON CONFLICT DO UPDATE.
 dev-upsert: dev-init
-	$(DEV_RUN) --config default --group country
+	$(DEV_RUN) --config ./_configs/default.yml --group country
 
 # Preserve path: INSERT ... ON CONFLICT DO NOTHING (existing rows untouched).
 dev-preserve: dev-init
-	$(DEV_RUN) --config default --group country_preserve --preserve
+	$(DEV_RUN) --config ./_configs/default.yml --group country_preserve --preserve
 
 # Dry run: resolve tasks and stream, but roll back instead of committing.
 dev-dry-run: dev-init
-	$(DEV_RUN) --config default --group country --dry-run
+	$(DEV_RUN) --config ./_configs/default.yml --group country --dry-run
 
 # Ad-hoc single table with an inline WHERE filter, no config needed.
 dev-table: dev-init
-	$(DEV_RUN) --config default --table public.city:country_id=10 --truncate
+	$(DEV_RUN) --config ./_configs/default.yml --table public.city:country_id=10 --truncate
 
 # Inline scrub rules applied to columns as SQL expressions on the source side.
 dev-scrub: dev-init

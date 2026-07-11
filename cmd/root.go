@@ -60,7 +60,7 @@ func requireSingleArg(cCtx *cli.Context, what string) (string, error) {
 func requireConnections(handler *config.UserConfigHandler) {
 	conns, err := handler.ListConnections()
 	if err != nil || len(conns) == 0 {
-		fmt.Println("No connections found. Run 'pggosync conn init <name>' to create one.")
+		fmt.Println("No connections found. Run 'pggosync conn init' to create the default source/dest pair.")
 		os.Exit(0)
 	}
 }
