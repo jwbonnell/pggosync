@@ -55,7 +55,7 @@ func TestTruncate(t *testing.T) {
 	assert.NoError(t, err)
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table", "country")
@@ -85,7 +85,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	assert.NoError(t, err)
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
@@ -117,7 +117,7 @@ func TestTruncateDisableTriggers(t *testing.T) {
 	assert.NoError(t, err)
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
@@ -150,7 +150,7 @@ func TestSync(t *testing.T) {
 	assert.NoError(t, err)
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group", "country_var_1:1001")
@@ -180,7 +180,7 @@ func TestSync_Preserve(t *testing.T) {
 	assert.NoError(t, err)
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--group")
@@ -210,7 +210,7 @@ func TestSync_Table(t *testing.T) {
 	}()
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
@@ -243,7 +243,7 @@ func TestDryRun(t *testing.T) {
 	defer db.Exec(ctx, "DELETE FROM country WHERE country_id = 8888")
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table", "country")
@@ -265,9 +265,9 @@ func TestValidate(t *testing.T) {
 	}
 
 	args := os.Args[0:1]
-	args = append(args, "validate")
+	args = append(args, "config", "validate")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/default.yml")
+	args = append(args, "../../_configs/default.yml")
 	// Should exit cleanly without calling log.Fatal.
 	cmd.Execute("test", args)
 }
@@ -286,7 +286,7 @@ func TestSync_TableMulti(t *testing.T) {
 	}()
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
@@ -325,7 +325,7 @@ func TestSync_Scrub(t *testing.T) {
 	}()
 
 	args := os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table")
@@ -342,7 +342,7 @@ func TestSync_Scrub(t *testing.T) {
 
 	// Restore real values so later tests see unscrubbed data.
 	args = os.Args[0:1]
-	args = append(args, "sync")
+	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
 	args = append(args, "--config", "../../_configs/default.yml")
 	args = append(args, "--table", "country")

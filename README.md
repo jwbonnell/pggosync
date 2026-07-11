@@ -48,18 +48,18 @@ go install github.com/jwbonnell/pggosync@latest
 **1. Create connection configs for your source and destination databases:**
 
 ```bash
-pggosync init source
-pggosync init dest
+pggosync conn init source
+pggosync conn init dest
 ```
 
-This writes placeholder YAML files to `$XDG_CONFIG_DIR/pggosync/` (e.g. `~/.config/pggosync/source.yaml`). Open each file and fill in your credentials.
+This writes placeholder YAML files to `$XDG_CONFIG_DIR/pggosync/` (e.g. `~/.config/pggosync/source.yaml`). Open each file and fill in your credentials — or use `pggosync conn new` for an interactive form.
 
 **2. Create a sync config file** (see [Sync Config](#sync-config)).
 
 **3. Run a sync:**
 
 ```bash
-pggosync sync \
+pggosync run \
   --source source \
   --dest dest \
   --config my-sync.yml \
@@ -86,21 +86,34 @@ sslmode: disable
 ### Commands
 
 ```bash
-# Create a new connection config with sensible defaults
-pggosync init <name>
+# Create a new connection config with placeholder defaults
+pggosync conn init <name>
+
+# Create a connection interactively
+pggosync conn new
 
 # List all saved connection names
-pggosync config list
+pggosync conn list
 
 # Print a connection config (password is masked)
-pggosync config get <name>
+pggosync conn get <name>
+
+# Check that a connection can actually reach its database
+pggosync conn test <name>
 ```
 
 ---
 
 ## Sync Config
 
-The sync config is a YAML file you pass to `--config`. It defines named groups of tables with optional SQL WHERE filters and a top-level exclude list.
+The sync config is a YAML file referenced by `--config`. It defines named groups of tables with optional SQL WHERE filters and a top-level exclude list.
+
+`--config` accepts either a file path or a bare name. A name is looked up as `<name>.yaml`/`<name>.yml` in, order of precedence:
+
+1. `./.pggosync/configs/` — project-local, commit these to share configs with your team
+2. `$XDG_CONFIG_DIR/pggosync/configs/` — user-level
+
+Use `pggosync config list` to see what's discoverable and `pggosync config validate <name-or-path>` to check a config.
 
 ```yaml
 description: "Sync config for staging refresh"
@@ -132,10 +145,10 @@ groups:
 `{1}`, `{2}`, … in a filter are replaced with the corresponding positional values supplied via `--group <name>:<p1>,<p2>`:
 
 ```bash
-pggosync sync ... --group by_tenant:42
+pggosync run ... --group by_tenant:42
 # → tenant_id = 42
 
-pggosync sync ... --group by_tenant:42,99
+pggosync run ... --group by_tenant:42,99
 # → {1}=42, {2}=99
 ```
 
@@ -175,7 +188,7 @@ groups:
 
 ## Data Scrubbing
 
-Scrubbing anonymises column values during the sync. The rule is compiled into a
+Scrubbing anonymizes column values during the sync. The rule is compiled into a
 SQL expression that runs **on the source** inside the `COPY TO STDOUT` query, so
 raw values never leave the source database — only the transformed value is streamed
 to the destination.
@@ -184,7 +197,7 @@ Configure scrub rules per table either in the sync config (`scrub:` block, above
 inline on a `--table` argument:
 
 ```bash
-pggosync sync ... \
+pggosync run ... \
   --table 'public.users::email=random_email,ssn=redact,name=partial:3'
 ```
 
@@ -211,22 +224,52 @@ Parameterised rules take their argument after a colon (`partial:5`, `static:test
 ## Profiles
 
 A profile is a saved, named bundle of sync options (source, dest, config file,
-groups, and flags). Profiles are stored as `profiles.json` in
-`$XDG_CONFIG_DIR/pggosync/` and are created and launched from the TUI's
-**Manage Profiles** screen.
+groups, and flags). Each profile is a single YAML file, resolved like sync
+configs — by name or path, searching:
 
-From the CLI, load a profile as defaults with `--profile`. Any explicit flag you
-also pass overrides the profile's stored value, so a profile makes `--source`,
-`--dest`, and `--config` optional:
+1. `./.pggosync/profiles/` — project-local, commit these to share profiles with your team
+2. `$XDG_CONFIG_DIR/pggosync/profiles/` — user-level (this is where the TUI's
+   **Manage Profiles** screen saves them)
+
+A legacy `profiles.json` is migrated automatically into per-file YAML on first use.
+
+```yaml
+# ./.pggosync/profiles/nightly-staging.yaml — the name comes from the filename
+source: prod
+dest: local
+config_file: default        # name or path, resolved like --config
+groups: [users]
+truncate: true
+concurrency: 4
+```
+
+Run a sync from a profile with `profile sync`. Any explicit flag overrides the
+profile's stored value (flags go before the profile name):
 
 ```bash
-pggosync sync --profile nightly-staging
-pggosync sync --profile nightly-staging --dry-run   # override just the dry-run flag
+pggosync profile sync nightly-staging
+pggosync profile sync --dry-run nightly-staging   # override just the dry-run flag
+
+pggosync profile list                     # list discoverable profiles
+pggosync profile show nightly-staging     # print a profile's contents
+pggosync profile validate nightly-staging # check connections + config file exist and parse
 ```
 
 ---
 
 ## Commands
+
+```
+pggosync                                → interactive TUI
+pggosync run [flags]                    → run a sync
+pggosync tables -s <src> -d <dst>       → diff tables between the two databases
+pggosync conn init|new|list|get|test    → manage connections
+pggosync profile list|show|sync|validate → manage and run profiles
+pggosync config list|validate           → manage sync configs
+pggosync version                        → print version
+```
+
+Unknown subcommands are an error; only a bare `pggosync` opens the TUI.
 
 ### `pggosync` (no subcommand)
 
@@ -240,20 +283,19 @@ Launches the interactive TUI. Navigate with arrow keys; Enter to select. Availab
 The menu also shows a **last sync** summary line. TUI-run syncs are recorded to a
 rolling history file (`history.json`, last 20 runs) in `$XDG_CONFIG_DIR/pggosync/`.
 
-### `pggosync sync`
+### `pggosync run`
 
 Syncs one or more groups or explicit tables from source to destination.
 
 ```
-pggosync sync --source <name> --dest <name> --config <path> [flags]
+pggosync run --source <name> --dest <name> --config <name-or-path> [flags]
 ```
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--profile` | `-pr` | — | Load a saved [profile](#profiles) as defaults (explicit flags win) |
-| `--source` | `-s` | — | Source connection name **(required unless in profile)** |
-| `--dest` | `-d` | — | Destination connection name **(required unless in profile)** |
-| `--config` | `-c` | — | Path to sync config YAML **(required unless in profile)** |
+| `--source` | `-s` | — | Source connection name **(required)** |
+| `--dest` | `-d` | — | Destination connection name **(required)** |
+| `--config` | `-c` | — | Sync config name or path **(required)** |
 | `--group` | `-g` | — | Group(s) to sync. Repeatable. Format: `name` or `name:p1,p2` |
 | `--table` | `-t` | — | Explicit table(s) to sync. Repeatable. Format: `schema.table[:filter][:col1=rule1,col2=rule2]` |
 | `--exclude` | `-e` | — | Table(s) to exclude. Repeatable. Format: `schema.table` |
@@ -283,7 +325,7 @@ By default, the destination must resolve to `localhost` or `127.0.0.1`. Pass `--
 
 #### Interactive confirmation
 
-Without `--skip-confirmation`, the sync command prints a summary banner and waits for:
+Without `--skip-confirmation`, the run command prints a summary banner and waits for:
 - `yes` — start the sync
 - `no` — abort
 - `more` — list each table with its strategy and (for truncate) current destination row count
@@ -294,37 +336,39 @@ When neither `--group` nor `--table` is passed, all tables present in both sourc
 
 ---
 
-### `pggosync validate`
+### `pggosync profile sync <name-or-path>`
 
-Resolves tasks against both databases without syncing. Useful for checking that all tables exist and that PK requirements are met before running a full sync.
-
-```
-pggosync validate --source <name> --dest <name> --config <path> [--group ...] [--table ...] [--exclude ...]
-```
-
-Accepts `--truncate` and `--preserve` so you can validate under the same strategy you intend to use.
+Runs a sync with a [profile](#profiles) providing the defaults. Accepts the same
+flags as `run`; explicit flags override the profile's values and must come
+before the profile name.
 
 ---
 
-### `pggosync list`
+### `pggosync config validate <name-or-path>`
 
-Lists tables in source and destination, grouped as: both, source-only, destination-only.
-
-```
-pggosync list --source <name> --dest <name>
-```
+Validates a sync config. Without connection flags it is an offline check: the
+YAML must parse, every group needs tables, and scrub rules must be known. With
+`--source` and `--dest` it additionally resolves tasks against both databases —
+checking that all tables exist and PK requirements are met — and accepts
+`--group`, `--table`, `--exclude`, `--truncate`, and `--preserve` so you can
+validate under the same strategy you intend to use.
 
 ---
 
-### `pggosync init <name>`
+### `pggosync tables`
 
-Creates a placeholder connection config file. Defaults to `default` if no name is given.
+Diffs tables between source and destination, grouped as: both, source-only, destination-only.
+
+```
+pggosync tables --source <name> --dest <name>
+```
 
 ---
 
 ### `pggosync version`
 
-Prints the build string set at compile time.
+Prints the version. Release builds embed `git describe` output via the
+makefile; `go install` builds fall back to the module version from Go build info.
 
 ---
 
@@ -334,7 +378,7 @@ Prints the build string set at compile time.
 
 **User config** — connection credentials, one YAML file per named connection in `$XDG_CONFIG_DIR/pggosync/`. Managed by `config.UserConfigHandler`.
 
-**Sync config** — a YAML file passed at runtime via `--config`. Defines named groups of tables with optional WHERE filters and a global exclude list.
+**Sync config** — a YAML file referenced at runtime via `--config` (by path, or by name searched in `./.pggosync/configs/` then `$XDG_CONFIG_DIR/pggosync/configs/`). Defines named groups of tables with optional WHERE filters and a global exclude list.
 
 ### Data flow
 
@@ -379,7 +423,7 @@ Source pre-fetching is concurrent; destination writes are strictly sequential (o
 | Package | Responsibility |
 |---------|---------------|
 | `cmd/` | CLI command definitions using `urfave/cli/v2` |
-| `config/` | Connection credentials (`user.go`), sync config parsing (`sync.go`), and JSON-backed profiles (`profiles.go`) and sync history (`history.go`) |
+| `config/` | Connection credentials (`user.go`), sync config parsing (`sync.go`), name-or-path resolution (`resolve.go`), per-file YAML profiles (`profiles.go`), and sync history (`history.go`) |
 | `datasource/` | Read-only (`ReaderDataSource`) and read-write (`ReadWriteDatasource`) pgx connection wrappers |
 | `db/` | Pure types (`Table`, `Column`, `PrimaryKey`, `Sequence`, `Trigger`) and low-level SQL helpers |
 | `opts/` | Argument parsing for `--group name:params` and `--table schema.table[:filter][:col=rule]` |

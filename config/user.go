@@ -65,7 +65,7 @@ func (uc *UserConfigHandler) GetConnection(name string) (ConnectionConfig, error
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return ConnectionConfig{}, fmt.Errorf("connection %q not found; run 'pggosync init %s' to create it", name, name)
+			return ConnectionConfig{}, fmt.Errorf("connection %q not found; run 'pggosync conn init %s' to create it", name, name)
 		}
 		return ConnectionConfig{}, fmt.Errorf("could not read connection %q: %w", name, err)
 	}

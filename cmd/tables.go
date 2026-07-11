@@ -9,12 +9,12 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// listCmd returns a CLI command that categorises tables as shared, source-only, or destination-only.
-func listCmd(handler *config.UserConfigHandler) *cli.Command {
+// tablesCmd returns a CLI command that diffs tables between the source and destination databases,
+// categorising them as shared, source-only, or destination-only.
+func tablesCmd(handler *config.UserConfigHandler) *cli.Command {
 	return &cli.Command{
-		Name:    "list",
-		Aliases: []string{"l"},
-		Usage:   "List tables in source and destination databases",
+		Name:  "tables",
+		Usage: "Diff tables between the source and destination databases",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "source",

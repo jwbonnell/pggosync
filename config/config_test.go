@@ -38,7 +38,7 @@ func TestConfigHandler_GetConnection_Missing(t *testing.T) {
 	_, err := handler.GetConnection("doesnotexist")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "doesnotexist")
-	assert.Contains(t, err.Error(), "pggosync init")
+	assert.Contains(t, err.Error(), "pggosync conn init")
 }
 
 func TestConfigHandler_ListConnections(t *testing.T) {

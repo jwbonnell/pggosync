@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -52,15 +51,7 @@ type userConfigModel struct {
 	status  string
 
 	editingName string
-
-	// flat form fields
-	connName string
-	host     string
-	port     string
-	database string
-	user     string
-	password string
-	sslmode  string
+	formValues  *connectionFormValues
 }
 
 // newUserConfigModel creates the connection management screen with the connection list pre-loaded.
@@ -98,64 +89,12 @@ func (m *userConfigModel) buildList() list.Model {
 
 // buildConnectionForm creates the Huh form for creating or editing a connection; pre-populates fields when existing is non-nil.
 func (m *userConfigModel) buildConnectionForm(name string, existing *config.ConnectionConfig) *huh.Form {
+	m.formValues = newConnectionFormValues(name, existing)
+	placeholder := ""
 	if existing != nil {
-		m.connName = name
-		m.host = existing.Host
-		m.port = strconv.Itoa(existing.Port)
-		m.database = existing.Database
-		m.user = existing.User
-		m.password = existing.Password
-		m.sslmode = existing.SSLMode
-		if m.sslmode == "" {
-			m.sslmode = "disable"
-		}
-	} else {
-		m.connName = ""
-		m.host = "localhost"
-		m.port = "5444"
-		m.database = "postgres"
-		m.user = ""
-		m.password = ""
-		m.sslmode = "disable"
+		placeholder = name
 	}
-	nameField := huh.NewInput().
-		Title("Connection name").
-		Description("Identifier for this connection").
-		Validate(func(s string) error {
-			if strings.TrimSpace(s) == "" {
-				return fmt.Errorf("connection name is required")
-			}
-			return nil
-		}).
-		Value(&m.connName)
-	if existing != nil {
-		nameField = nameField.Placeholder(name)
-	}
-	return huh.NewForm(
-		huh.NewGroup(
-			nameField,
-			huh.NewInput().Title("Host").Value(&m.host),
-			huh.NewInput().Title("Port").Value(&m.port).Validate(func(s string) error {
-				p, err := strconv.Atoi(strings.TrimSpace(s))
-				if err != nil || p < 1 || p > 65535 {
-					return fmt.Errorf("must be a number between 1 and 65535")
-				}
-				return nil
-			}),
-			huh.NewInput().Title("Database").Value(&m.database),
-			huh.NewInput().Title("User").Value(&m.user),
-			huh.NewInput().Title("Password").EchoMode(huh.EchoModePassword).Value(&m.password),
-			huh.NewSelect[string]().
-				Title("SSL mode").
-				Options(
-					huh.NewOption("disable", "disable"),
-					huh.NewOption("prefer", "prefer"),
-					huh.NewOption("require", "require"),
-					huh.NewOption("verify-full", "verify-full"),
-				).
-				Value(&m.sslmode),
-		),
-	)
+	return newConnectionForm(m.formValues, placeholder)
 }
 
 // Init satisfies tea.Model; the connection list needs no initial command.
@@ -241,7 +180,7 @@ func (m userConfigModel) openNewForm() (userConfigModel, tea.Cmd) {
 
 // saveConnection validates form fields, persists the connection config, and returns to the list.
 func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
-	name := strings.TrimSpace(m.connName)
+	name, conn := m.formValues.connection()
 	if name == "" && m.editingName != "" {
 		name = m.editingName
 	}
@@ -250,15 +189,6 @@ func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 		m.phase = ucPhaseForm
 		m.form = m.buildConnectionForm("", nil)
 		return m, m.form.Init()
-	}
-	port, _ := strconv.Atoi(strings.TrimSpace(m.port))
-	conn := config.ConnectionConfig{
-		Host:     m.host,
-		Port:     port,
-		Database: m.database,
-		User:     m.user,
-		Password: m.password,
-		SSLMode:  m.sslmode,
 	}
 	if err := m.handler.SaveConnection(name, conn); err != nil {
 		m.err = err.Error()

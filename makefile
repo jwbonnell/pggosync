@@ -29,7 +29,7 @@
 # ==============================================================================
 # Variables
 
-VERSION=0.1.0-prerelease
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo development)
 PSQL_SOURCE_CMD := docker compose exec source_db psql -h localhost -U source_user -d postgres
 PSQL_DEST_CMD   := docker compose exec dest_db psql -h localhost -U dest_user -d postgres
 
@@ -44,10 +44,10 @@ up:
 down:
 	docker compose down
 
-build:
+docker-build:
 	docker compose build
 
-rebuild: down build up
+rebuild: down docker-build up
 
 test:
 	go test -count=1 -v ./... | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/''
@@ -73,7 +73,7 @@ build:
 # CLI Commands
 
 pggosync_truncate:
-	go run main.go sync --group country_var_1:2 --truncate
+	go run main.go run --group country_var_1:2 --truncate
 
 # ==============================================================================
 # Database commands

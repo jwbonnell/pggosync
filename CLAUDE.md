@@ -34,11 +34,11 @@ Integration tests in `cmd/tests/` connect to the Docker databases directly (sour
 
 ### Two Config Layers
 
-**User config** (connection credentials) is stored at `$XDG_CONFIG_DIR/pggosync/<name>.yaml`. A file named `default` in that directory holds the active config name. Managed via `pggosync init` / `pggosync config`. The `config.UserConfigHandler` handles all reads and writes to this directory.
+**User config** (connection credentials) is stored at `$XDG_CONFIG_DIR/pggosync/<name>.yaml`. Managed via `pggosync conn` (`init`, `new`, `list`, `get`, `test`). The `config.UserConfigHandler` handles all reads and writes to this directory.
 
-**Sync config** (groups and exclusions) is a YAML file passed at runtime via `--config`. It defines named groups of tables with optional SQL WHERE filters, per-table scrub rules, and a top-level `exclude` list. See `_configs/default.yml` for a reference example.
+**Sync config** (groups and exclusions) is a YAML file referenced at runtime via `--config`, either by path or by bare name. Names are resolved by `config/resolve.go` against `./.pggosync/configs/` (project-local) then `$XDG_CONFIG_DIR/pggosync/configs/` (user-level). It defines named groups of tables with optional SQL WHERE filters, per-table scrub rules, and a top-level `exclude` list. See `_configs/default.yml` for a reference example.
 
-`config.UserConfigHandler` also manages two JSON files in the same config directory: `profiles.json` (saved sync profiles — see below) and `history.json` (a rolling record of the last 20 TUI-run syncs).
+`config.UserConfigHandler` also manages sync profiles (one YAML file per profile — see below) and `history.json` (a rolling record of the last 20 TUI-run syncs) in the same config directory.
 
 ### Sync Config Groups and Param Substitution
 
@@ -79,14 +79,14 @@ Scrub rules anonymise column values during a sync. A rule ID (`hash`, `redact`, 
 
 ### Profiles
 
-A `config.SyncProfile` is a named bundle of sync options (source, dest, config file, groups, flags) persisted in `profiles.json`. The CLI `--profile` flag loads one as defaults, filling only fields the user did not set explicitly (`cCtx.IsSet` guards in `cmd/sync.go`). Profiles are created and launched from the TUI's Manage Profiles screen. Note: schema sync (`sync/schemasync.go`) is an unfinished stub and is not wired into any command.
+A `config.SyncProfile` is a named bundle of sync options (source, dest, config file, groups, flags) stored as one YAML file per profile; the name comes from the filename stem. Profiles are resolved by name or path against `./.pggosync/profiles/` then `$XDG_CONFIG_DIR/pggosync/profiles/` (the TUI saves to the latter; a legacy `profiles.json` is auto-migrated on first load). `pggosync profile sync <name>` loads one as defaults, filling only fields the user did not set explicitly (`cCtx.IsSet` guards in `cmd/profile.go`), then delegates to `executeSync` in `cmd/run.go`. Note: schema sync (`sync/schemasync.go`) is an unfinished stub and is not wired into any command.
 
 ### Package Responsibilities
 
 | Package | Responsibility |
 |---|---|
-| `cmd/` | CLI command definitions using `urfave/cli/v2` (`sync`, `validate`, `list`, `init`, `config`, `version`; no subcommand launches the TUI) |
-| `config/` | User config (credentials), sync config (groups/filters/scrub), plus JSON-backed profiles and sync history |
+| `cmd/` | CLI command definitions using `urfave/cli/v2` (`run`, `tables`, `conn`, `profile`, `config`, `version`; no subcommand launches the TUI, unknown subcommands error) |
+| `config/` | User config (credentials), sync config (groups/filters/scrub), name-or-path resolution, per-file YAML profiles, and sync history |
 | `datasource/` | `ReaderDataSource` (read-only pgx connection) and `ReadWriteDatasource` (embeds reader, adds writes) |
 | `db/` | Pure types (Table, Column, PrimaryKey, etc.) and low-level SQL helpers |
 | `opts/` | Argument parsing for `--group name:params` and `--table schema.table[:filter][:col=rule]` |
@@ -97,4 +97,4 @@ A `config.SyncProfile` is a named bundle of sync options (source, dest, config f
 
 ### Safety Check
 
-By default the destination database must resolve to `localhost` or `127.0.0.1`. Pass `--no-safety` to override. The check is enforced in `cmd/sync.go` before `sync.Sync()` is called.
+By default the destination database must resolve to `localhost` or `127.0.0.1`. Pass `--no-safety` to override. The check is enforced in `executeSync` (`cmd/run.go`) before `sync.Sync()` is called.

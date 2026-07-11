@@ -157,7 +157,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 		options[i] = huh.NewOption(c, c)
 	}
 	if len(options) == 0 {
-		options = []huh.Option[string]{huh.NewOption("(none — run pggosync init first)", "")}
+		options = []huh.Option[string]{huh.NewOption("(none — run pggosync conn init first)", "")}
 	}
 	return huh.NewForm(
 		huh.NewGroup(
