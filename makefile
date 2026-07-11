@@ -84,7 +84,7 @@ dev-init:
 	go run main.go conn init dest
 
 # Truncate path: wipe destination tables, then COPY straight from source.
-pggosync_truncate: dev-init
+dev-truncate: dev-init
 	$(DEV_RUN) --config default --group country_var_1:2 --truncate
 
 # Upsert path (default): temp table + INSERT ... ON CONFLICT DO UPDATE.
