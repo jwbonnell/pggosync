@@ -71,9 +71,61 @@ build:
 
 # ==============================================================================
 # CLI Commands
+#
+# dev-* targets are throwaway helpers for exercising pggosync against the local
+# Docker databases. They all use the default "source"/"dest" connections and the
+# checked-in sync configs (_configs/default.yml, _configs/manual.yml).
 
-pggosync_truncate:
-	go run main.go run --group country_var_1:2 --truncate
+# Shared run invocation: default connections against the local Docker databases.
+DEV_RUN := go run main.go run --source source --dest dest
+
+dev-init:
+	go run main.go conn init source
+	go run main.go conn init dest
+
+# Truncate path: wipe destination tables, then COPY straight from source.
+pggosync_truncate: dev-init
+	$(DEV_RUN) --config default --group country_var_1:2 --truncate
+
+# Upsert path (default): temp table + INSERT ... ON CONFLICT DO UPDATE.
+dev-upsert: dev-init
+	$(DEV_RUN) --config default --group country
+
+# Preserve path: INSERT ... ON CONFLICT DO NOTHING (existing rows untouched).
+dev-preserve: dev-init
+	$(DEV_RUN) --config default --group country_preserve --preserve
+
+# Dry run: resolve tasks and stream, but roll back instead of committing.
+dev-dry-run: dev-init
+	$(DEV_RUN) --config default --group country --dry-run
+
+# Ad-hoc single table with an inline WHERE filter, no config needed.
+dev-table: dev-init
+	$(DEV_RUN) --config default --table public.city:country_id=10 --truncate
+
+# Inline scrub rules applied to columns as SQL expressions on the source side.
+dev-scrub: dev-init
+	$(DEV_RUN) --config manual --table public.employee:'active = true':name=redact,role=null --truncate
+
+# Multi-schema cross-schema FK chain, deferring constraints on the destination.
+dev-defer: dev-init
+	$(DEV_RUN) --config manual --group store_inventory:10 --defer-constraints --truncate
+
+# Disable user triggers on the destination for the duration of the sync.
+dev-triggers: dev-init
+	$(DEV_RUN) --config manual --group employee_org --disable-triggers --truncate
+
+# Self-referential FK / composite PK / JSONB coverage from the catalog schema.
+dev-catalog: dev-init
+	$(DEV_RUN) --config manual --group product_catalog:1
+
+# Concurrent source pre-fetch across multiple groups.
+dev-concurrency: dev-init
+	$(DEV_RUN) --config manual --group product_catalog:1 --group product_reviews:5 --concurrency 4
+
+# Diff which tables are shared / missing between source and destination.
+dev-tables: dev-init
+	go run main.go tables --source source --dest dest
 
 # ==============================================================================
 # Database commands
