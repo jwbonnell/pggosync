@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/jwbonnell/pggosync/config"
 )
 
@@ -205,7 +204,6 @@ func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 
 func (m userConfigModel) View() string {
 	var sb strings.Builder
-	helpS := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	switch m.phase {
 	case ucPhaseList:
@@ -216,7 +214,7 @@ func (m userConfigModel) View() string {
 		if m.status != "" {
 			sb.WriteString("\n" + successStyle.Render(m.status))
 		}
-		sb.WriteString("\n" + helpS.Render("enter: edit   n: new   esc: back"))
+		sb.WriteString("\n" + mutedStyle.Render("enter: edit   n: new   esc: back"))
 
 	case ucPhaseForm:
 		sb.WriteString(wizardTitleStyle.Render("Connection Config"))

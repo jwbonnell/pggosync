@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -64,13 +65,14 @@ type syncOptions struct {
 }
 
 type syncWizardModel struct {
-	handler *config.UserConfigHandler
-	phase   wizardPhase
-	form    *huh.Form
-	width   int
-	height  int
-	err     string
-	spinner spinner.Model
+	handler  *config.UserConfigHandler
+	phase    wizardPhase
+	form     *huh.Form
+	width    int
+	height   int
+	err      string
+	spinner  spinner.Model
+	progress progress.Model
 
 	// Phases 1 & 2: individual connections
 	selectedSource string
@@ -127,12 +129,13 @@ type syncDoneMsg struct {
 func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = lipgloss.NewStyle().Foreground(colorPrimary)
 
 	m := syncWizardModel{
 		handler:            handler,
 		phase:              phasePickSource,
 		spinner:            s,
+		progress:           progress.New(progress.WithGradient(gradientStart, gradientEnd)),
 		options:            syncOptions{concurrency: 1},
 		concurrencyStr:     "1",
 		selectedTableIndex: 0,
@@ -159,7 +162,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 	if len(options) == 0 {
 		options = []huh.Option[string]{huh.NewOption("(none — run pggosync conn init first)", "")}
 	}
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title(title).
@@ -172,7 +175,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 
 // buildSyncFileForm creates the sync config path input form.
 func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Sync config path").
@@ -190,7 +193,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 		groupKeys = append(groupKeys, huh.NewOption(name, name))
 	}
 	if len(groupKeys) > 0 {
-		return huh.NewForm(
+		return newForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Title("Groups to sync").
@@ -204,7 +207,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 			),
 		)
 	}
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Tables to sync").
@@ -217,7 +220,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 // buildOptionsForm creates the full sync-options form (truncate, preserve, constraints, triggers, concurrency, dry-run, safety).
 func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	m.concurrencyStr = fmt.Sprintf("%d", m.options.concurrency)
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Truncate destination tables?").
@@ -265,6 +268,16 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Size the progress bar to the terminal, leaving room for the docStyle margin
+		// and the "N / M tables" label; clamp so it never collapses or runs off-screen.
+		barWidth := msg.Width - 30
+		if barWidth < 20 {
+			barWidth = 20
+		}
+		if barWidth > 80 {
+			barWidth = 80
+		}
+		m.progress.Width = barWidth
 		if m.phase == phasePreview {
 			m.preview.Width = msg.Width - 4
 			m.preview.Height = msg.Height - 6
@@ -769,7 +782,7 @@ func parseFailedLine(line string) (table, errMsg string, ok bool) {
 
 // buildSaveProfileForm creates a single-input form asking for the profile name.
 func (m *syncWizardModel) buildSaveProfileForm() *huh.Form {
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Profile name").
@@ -856,20 +869,6 @@ func (m syncWizardModel) buildHistoryEntry(syncErr error, result sync.SyncResult
 
 // ── View ───────────────────────────────────────────────────────────────────────
 
-var (
-	wizardTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
-	errorStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).MarginTop(1)
-	helpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
-	successStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
-	borderStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1).Margin(1, 2)
-	detailBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("205")).Padding(1, 2)
-	detailTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
-	detailKeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	detailValueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	selectedRowStyle  = lipgloss.NewStyle().Background(lipgloss.Color("236"))
-	scrubStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("135")).Bold(true)
-)
-
 // renderDetailPanel renders a bordered detail box for the currently selected table.
 func (m syncWizardModel) renderDetailPanel() string {
 	if m.selectedTableIndex < 0 || m.selectedTableIndex >= len(m.tasks) {
@@ -884,22 +883,17 @@ func (m syncWizardModel) renderDetailPanel() string {
 	sb.WriteString("\n\n")
 
 	statusLabel := "queued"
-	statusColor := lipgloss.Color("240")
 	switch st.phase {
 	case tableDone:
 		statusLabel = "done"
-		statusColor = lipgloss.Color("42")
 	case tableFailed:
 		statusLabel = "failed"
-		statusColor = lipgloss.Color("196")
 	case tableWriting:
 		statusLabel = "writing"
-		statusColor = lipgloss.Color("205")
 	case tablePrefetching, tablePrefetchReady:
 		statusLabel = "prefetching"
-		statusColor = lipgloss.Color("33")
 	}
-	sb.WriteString(detailRow("Status", lipgloss.NewStyle().Foreground(statusColor).Render(statusLabel)))
+	sb.WriteString(detailRow("Status", statusStyle(st.phase).Render(statusLabel)))
 
 	strategy := "upsert"
 	if task.Truncate && !task.Preserve {
@@ -1013,13 +1007,11 @@ func (m syncWizardModel) View() string {
 
 		// Progress bar
 		total := len(m.tasks)
-		barWidth := 20
-		filled := 0
+		percent := 0.0
 		if total > 0 {
-			filled = m.tablesCompleted * barWidth / total
+			percent = float64(m.tablesCompleted) / float64(total)
 		}
-		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
-		progressLine := fmt.Sprintf("  %d / %d tables  %s\n", m.tablesCompleted, total, bar)
+		progressLine := fmt.Sprintf("  %d / %d tables  %s\n", m.tablesCompleted, total, m.progress.ViewAs(percent))
 
 		// Per-table status list (cap to available height)
 		maxRows := m.height - 10
@@ -1052,32 +1044,27 @@ func (m syncWizardModel) View() string {
 			t := m.tasks[i]
 			st := m.tableStates[i]
 			var indicatorChar, detail string
-			var indicatorStyle lipgloss.Style
+			indicatorStyle := statusStyle(st.phase)
 			failed := false
 			switch st.phase {
 			case tableDone:
 				indicatorChar = "✓"
-				indicatorStyle = successStyle
 				detail = fmt.Sprintf("%s rows", sync.FormatCount(st.rows))
 				if t.SourceRowCount > 0 {
 					detail += fmt.Sprintf("  (~%s est.)", sync.FormatCount(t.SourceRowCount))
 				}
 			case tableFailed:
 				indicatorChar = "✗"
-				indicatorStyle = errorStyle
 				detail = "FAILED: " + st.errMsg
 				failed = true
 			case tableWriting:
 				indicatorChar = "●"
-				indicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 				detail = "writing..."
 			case tablePrefetching, tablePrefetchReady:
 				indicatorChar = "↓"
-				indicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
 				detail = "prefetching..."
 			default:
 				indicatorChar = "·"
-				indicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 				detail = "queued"
 			}
 			scrubBadge := ""

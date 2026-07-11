@@ -12,17 +12,6 @@ import (
 	"github.com/jwbonnell/pggosync/config"
 )
 
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			Padding(0, 1)
-
-	docStyle = lipgloss.NewStyle().Margin(1, 2)
-
-	lastSyncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-)
-
 type menuItem struct {
 	title       string
 	description string
@@ -40,8 +29,8 @@ type menuItemDelegate struct {
 // newMenuItemDelegate creates a list delegate with the project's pink highlight colour.
 func newMenuItemDelegate() menuItemDelegate {
 	d := list.NewDefaultDelegate()
-	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(lipgloss.Color("205")).BorderForeground(lipgloss.Color("205"))
-	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(lipgloss.Color("240")).BorderForeground(lipgloss.Color("205"))
+	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(colorPrimary).BorderForeground(colorPrimary)
+	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(colorMuted).BorderForeground(colorPrimary)
 	return menuItemDelegate{d}
 }
 
@@ -57,9 +46,9 @@ func (d menuDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	selected := index == m.Index()
 	titleS := lipgloss.NewStyle().PaddingLeft(2)
-	descS := lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("240"))
+	descS := lipgloss.NewStyle().PaddingLeft(4).Foreground(colorMuted)
 	if selected {
-		titleS = titleS.Foreground(lipgloss.Color("205")).Bold(true)
+		titleS = titleS.Foreground(colorPrimary).Bold(true)
 	}
 	_, _ = io.WriteString(w, titleS.Render(i.title)+"\n"+descS.Render(i.description))
 }
@@ -67,6 +56,57 @@ func (d menuDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type menuModel struct {
 	list      list.Model
 	lastEntry *config.SyncHistoryEntry
+	width     int
+	height    int
+}
+
+const (
+	borderSize = 2 // a rounded border adds 2 columns (and 2 rows) total
+
+	menuLogoArtWidth = 48 // width of menuLogoArt's widest line
+	menuLogoGap      = 6  // gap between the menu box and the logo box
+	menuBoxWidth     = 62 // fixed total width of the bordered menu box when the logo is shown
+	menuPadH         = 2  // menuPanelStyle Padding(0,1) horizontal
+	logoPadH         = 4  // logoPanelStyle Padding(1,2) horizontal
+
+	// menuListW is the list's content width inside the menu box (outer − border − padding).
+	menuListW = menuBoxWidth - borderSize - menuPadH
+)
+
+var (
+	menuPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPrimary).
+			Padding(0, 1)
+
+	logoPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPrimary).
+			Padding(1, 2).
+			MarginLeft(menuLogoGap).
+			Align(lipgloss.Center, lipgloss.Center)
+)
+
+// logoBoxOuter is the total width the logo box should render at to fill the space to the
+// right of the fixed-width menu box (excluding the left-margin gap). innerWidth is the width
+// inside docStyle's margins.
+func logoBoxOuter(innerWidth int) int {
+	return innerWidth - menuBoxWidth - menuLogoGap
+}
+
+// menuShowsLogo reports whether there's room for a logo box wide enough to hold the art.
+func menuShowsLogo(innerWidth int) bool {
+	return logoBoxOuter(innerWidth) >= menuLogoArtWidth+borderSize+logoPadH
+}
+
+// menuLogoContent returns the green block-letter banner plus a tagline (unbordered).
+func menuLogoContent() string {
+	return lipgloss.JoinVertical(
+		lipgloss.Center,
+		lipgloss.NewStyle().Foreground(colorPrimary).Bold(true).Render(menuLogoArt),
+		"",
+		mutedStyle.Render("postgres → postgres data sync"),
+	)
 }
 
 // newMenuModel creates the main menu with its three navigation items and an optional last-sync summary.
@@ -114,7 +154,15 @@ func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		m.width = msg.Width
+		m.height = msg.Height
+		innerWidth := msg.Width - h
+		if menuShowsLogo(innerWidth) {
+			// Fixed-width menu box beside the logo; shorten by the border to fit the box.
+			m.list.SetSize(menuListW, msg.Height-v-borderSize)
+		} else {
+			m.list.SetSize(innerWidth, msg.Height-v)
+		}
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -135,12 +183,29 @@ func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 }
 
 // View renders the menu list with document-style margins and an optional last-sync summary line.
+// On a wide-enough terminal, the pggosync logo is shown to the right of the menu.
 func (m menuModel) View() string {
 	content := strings.TrimRight(m.list.View(), "\n")
 	if m.lastEntry != nil {
 		content += "\n\n" + lastSyncStyle.Render(formatLastSync(m.lastEntry))
 	}
-	return docStyle.Render(content)
+
+	h, _ := docStyle.GetFrameSize()
+	innerWidth := m.width - h
+	if !menuShowsLogo(innerWidth) {
+		return docStyle.Render(content)
+	}
+
+	// Two bordered sections side by side. The menu box is a fixed width; the logo box
+	// stretches to fill the rest of the row and to the menu box's height, with the logo
+	// centered inside it. (lipgloss Width/Height set the box interior; the border adds 2.)
+	menuPanel := menuPanelStyle.Width(menuBoxWidth - borderSize).Render(content)
+	logoPanel := logoPanelStyle.
+		Width(logoBoxOuter(innerWidth) - borderSize).
+		Height(lipgloss.Height(menuPanel) - borderSize).
+		Render(menuLogoContent())
+	row := lipgloss.JoinHorizontal(lipgloss.Top, menuPanel, logoPanel)
+	return docStyle.Render(row)
 }
 
 func formatLastSync(e *config.SyncHistoryEntry) string {

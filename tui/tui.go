@@ -95,7 +95,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.screen {
 		case menuScreen:
 			m.menu = newMenuModel(lastSyncEntry(m.handler))
-			return m, m.menu.Init()
+			// Feed the fresh menu the current size so it re-derives its layout (e.g. the
+			// logo panel); no new WindowSizeMsg is sent just for returning to this screen.
+			var cmd tea.Cmd
+			m.menu, cmd = m.menu.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, tea.Batch(m.menu.Init(), cmd)
 		case syncWizardScreen:
 			m.syncWizard = newSyncWizardModel(m.handler)
 			return m, m.syncWizard.Init()

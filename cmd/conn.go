@@ -3,14 +3,37 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/tui"
+	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
+
+// interactiveTTY reports whether both stdin and stdout are terminals, so interactive
+// prompts are only shown when a human is driving — piped/scripted use stays plain.
+func interactiveTTY() bool {
+	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+}
+
+// connectionDetails renders a connection config as YAML with the password masked.
+// Shared by `conn get` and the interactive `conn list` picker.
+func connectionDetails(handler *config.UserConfigHandler, name string) (string, error) {
+	conn, err := handler.GetConnection(name)
+	if err != nil {
+		return "", err
+	}
+	conn.Password = "***"
+	out, err := yaml.Marshal(conn)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Connection: %s\n---\n%s", name, out), nil
+}
 
 // connCmd returns a CLI command with subcommands for managing database connections.
 func connCmd(handler *config.UserConfigHandler) *cli.Command {
@@ -52,7 +75,7 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 			},
 			{
 				Name:  "list",
-				Usage: "List all connections",
+				Usage: "List all connections; in a terminal, pick one to view its details",
 				Action: func(cCtx *cli.Context) error {
 					conns, err := handler.ListConnections()
 					if err != nil {
@@ -62,10 +85,16 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 						fmt.Println("No connections. Run 'pggosync conn init <name>' to create one.")
 						return nil
 					}
-					for _, c := range conns {
-						fmt.Printf("  %s\n", c)
+					// Piped/scripted: keep the plain, stable list output.
+					if !interactiveTTY() {
+						for _, c := range conns {
+							fmt.Printf("  %s\n", c)
+						}
+						return nil
 					}
-					return nil
+					// Interactive: browse the list; selecting a connection replaces it with a
+					// read-only detail view, and esc returns to the list.
+					return tui.RunConnectionBrowser(handler)
 				},
 			},
 			{
@@ -77,16 +106,11 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 					if err != nil {
 						return err
 					}
-					conn, err := handler.GetConnection(name)
+					details, err := connectionDetails(handler, name)
 					if err != nil {
 						return err
 					}
-					conn.Password = "***"
-					out, err := yaml.Marshal(conn)
-					if err != nil {
-						return err
-					}
-					fmt.Printf("Connection: %s\n---\n%s", name, out)
+					fmt.Print(details)
 					return nil
 				},
 			},

@@ -7,7 +7,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/sync/data"
 	"gopkg.in/yaml.v3"
@@ -72,7 +71,7 @@ func newSyncConfigModel() syncConfigBuilderModel {
 
 // buildMainForm creates the description and exclude-tables input form.
 func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Description").
@@ -89,7 +88,7 @@ func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
 // buildAddGroupForm creates the group-name input form and resets pendingGroupName.
 func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 	m.pendingGroupName = ""
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Group name").
@@ -103,7 +102,7 @@ func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	m.pendingTableName = ""
 	m.pendingFilter = ""
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Table name").
@@ -128,7 +127,7 @@ func (m *syncConfigBuilderModel) buildAddScrubForm() *huh.Form {
 		ruleOptions[i] = huh.NewOption(r, r)
 	}
 
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Column to scrub").
@@ -149,7 +148,7 @@ func (m *syncConfigBuilderModel) buildAddScrubForm() *huh.Form {
 // buildFinishTableForm asks whether to add another table after scrub rules are done.
 func (m *syncConfigBuilderModel) buildFinishTableForm() *huh.Form {
 	m.addAnotherTable = false
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Add another table to this group?").
@@ -163,7 +162,7 @@ func (m *syncConfigBuilderModel) buildSaveForm() *huh.Form {
 	m.savePath = ""
 	m.addAnotherGroup = false
 	m.addAnotherTable = false
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Add another table to this group?").
@@ -410,8 +409,6 @@ func (m syncConfigBuilderModel) writeYAML() (syncConfigBuilderModel, tea.Cmd) {
 func (m syncConfigBuilderModel) View() string {
 	var sb strings.Builder
 
-	helpS := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-
 	switch m.phase {
 	case scPhaseMain:
 		sb.WriteString(wizardTitleStyle.Render("Build Sync Config — Step 1: Description & Exclusions"))
@@ -467,7 +464,7 @@ func (m syncConfigBuilderModel) View() string {
 		sb.WriteString("\n")
 		sb.WriteString(m.status + "\n\n")
 		sb.WriteString(summaryView(m))
-		sb.WriteString("\n" + helpS.Render("press any key to return to the menu"))
+		sb.WriteString("\n" + mutedStyle.Render("press any key to return to the menu"))
 	}
 
 	return docStyle.Render(sb.String())
@@ -500,5 +497,5 @@ func summaryView(m syncConfigBuilderModel) string {
 			}
 		}
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sb.String())
+	return mutedStyle.Render(sb.String())
 }

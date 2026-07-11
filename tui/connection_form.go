@@ -74,7 +74,7 @@ func newConnectionForm(v *connectionFormValues, placeholderName string) *huh.For
 	if placeholderName != "" {
 		nameField = nameField.Placeholder(placeholderName)
 	}
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			nameField,
 			huh.NewInput().Title("Host").Value(&v.Host),
