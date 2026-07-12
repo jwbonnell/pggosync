@@ -165,6 +165,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 	return newForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Key("conn").
 				Title(title).
 				Description(desc).
 				Options(options...).
@@ -178,9 +179,10 @@ func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Sync config path").
-				Description("Path to the sync config YAML file").
-				Placeholder("_configs/configs/default.ym").
+				Key("config").
+				Title("Sync config").
+				Description("Bare name (searched in configs/ dirs) or a path to a YAML file").
+				Placeholder("default").
 				Value(&m.syncConfigPath),
 		),
 	)
@@ -196,11 +198,13 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 		return newForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
+					Key("groups").
 					Title("Groups to sync").
 					Description("Select groups (empty = all shared tables)").
 					Options(groupKeys...).
 					Value(&m.selectedGroups),
 				huh.NewInput().
+					Key("tables").
 					Title("Additional tables").
 					Description("Comma-separated, e.g. public.users,orders (optional)").
 					Value(&m.rawTableInput),
@@ -210,6 +214,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("tables").
 				Title("Tables to sync").
 				Description("Comma-separated (empty = all shared tables)").
 				Value(&m.rawTableInput),
@@ -223,22 +228,27 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewConfirm().
+				Key("truncate").
 				Title("Truncate destination tables?").
 				Description("Clears destination tables before syncing. Mutually exclusive with Preserve.").
 				Value(&m.options.truncate),
 			huh.NewConfirm().
+				Key("preserve").
 				Title("Preserve existing data?").
 				Description("INSERT ... ON CONFLICT DO NOTHING. Ignored when Truncate is enabled.").
 				Value(&m.options.preserve),
 			huh.NewConfirm().
+				Key("defer").
 				Title("Defer FK constraints?").
 				Description("Allows out-of-order inserts on the destination.").
 				Value(&m.options.deferConstraints),
 			huh.NewConfirm().
+				Key("triggers").
 				Title("Disable user triggers?").
 				Description("Disables user triggers on the destination during sync.").
 				Value(&m.options.disableTriggers),
 			huh.NewSelect[string]().
+				Key("concurrency").
 				Title("Concurrency").
 				Description("Source tables to pre-fetch in parallel.").
 				Options(
@@ -249,10 +259,12 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 				).
 				Value(&m.concurrencyStr),
 			huh.NewConfirm().
+				Key("dryrun").
 				Title("Dry run?").
 				Description("Simulate without committing changes.").
 				Value(&m.options.dryRun),
 			huh.NewConfirm().
+				Key("nosafety").
 				Title("Disable safety check?").
 				Description("Allow syncing to non-localhost destinations.").
 				Value(&m.options.noSafety),
@@ -413,7 +425,40 @@ func (m syncWizardModel) goBack() (syncWizardModel, tea.Cmd) {
 }
 
 // advancePhase moves to the next phase after a form completes, loading the sync config at the file-pick step.
+// captureForm copies the just-completed form's values out of the huh form and into
+// the model's fields, keyed by the current phase. This is necessary because huh binds
+// each field via a pointer captured when the form was built; the model is copied by
+// value on every Update (bubbletea) so those bound pointers target a stale copy and the
+// struct fields never receive the user's input. The *huh.Form itself is a shared pointer,
+// so reading through it (by key) is the reliable source of truth.
+func (m *syncWizardModel) captureForm() {
+	switch m.phase {
+	case phasePickSource:
+		m.selectedSource = m.form.GetString("conn")
+	case phasePickDest:
+		m.selectedDest = m.form.GetString("conn")
+	case phasePickSyncFile:
+		m.syncConfigPath = m.form.GetString("config")
+	case phasePickGroupsAndTables:
+		if groups, ok := m.form.Get("groups").([]string); ok {
+			m.selectedGroups = groups
+		}
+		m.rawTableInput = m.form.GetString("tables")
+	case phasePickOptions:
+		m.options.truncate = m.form.GetBool("truncate")
+		m.options.preserve = m.form.GetBool("preserve")
+		m.options.deferConstraints = m.form.GetBool("defer")
+		m.options.disableTriggers = m.form.GetBool("triggers")
+		m.concurrencyStr = m.form.GetString("concurrency")
+		m.options.dryRun = m.form.GetBool("dryrun")
+		m.options.noSafety = m.form.GetBool("nosafety")
+	case phaseSaveProfile:
+		m.profileNameInput = m.form.GetString("profile")
+	}
+}
+
 func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
+	m.captureForm()
 	switch m.phase {
 	case phasePickSource:
 		m.phase = phasePickDest
@@ -426,7 +471,13 @@ func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 		return m, m.form.Init()
 
 	case phasePickSyncFile:
-		sc, err := config.GetSyncConfig(m.syncConfigPath)
+		configPath, err := m.handler.ResolveSyncConfigPath(m.syncConfigPath)
+		if err != nil {
+			m.err = err.Error()
+			m.form = m.buildSyncFileForm()
+			return m, m.form.Init()
+		}
+		sc, err := config.GetSyncConfig(configPath)
 		if err != nil {
 			m.err = err.Error()
 			m.form = m.buildSyncFileForm()
@@ -785,6 +836,7 @@ func (m *syncWizardModel) buildSaveProfileForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("profile").
 				Title("Profile name").
 				Description("Save this configuration for quick re-launch").
 				Value(&m.profileNameInput),
@@ -829,8 +881,10 @@ func newSyncWizardModelFromProfile(handler *config.UserConfigHandler, p config.S
 		dryRun:           p.DryRun,
 		noSafety:         p.NoSafety,
 	}
-	if sc, err := config.GetSyncConfig(p.ConfigFile); err == nil {
-		m.syncConfig = sc
+	if path, err := handler.ResolveSyncConfigPath(p.ConfigFile); err == nil {
+		if sc, err := config.GetSyncConfig(path); err == nil {
+			m.syncConfig = sc
+		}
 	}
 	m.phase = phasePickOptions
 	return m

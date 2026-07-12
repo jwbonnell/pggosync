@@ -193,42 +193,7 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 	if !args.SkipConfirmation {
 		reader := bufio.NewReader(os.Stdin)
 		for {
-			dryRunLabel := ""
-			if args.DryRun {
-				dryRunLabel = "  *** DRY RUN — no changes will be committed ***\n"
-			}
-			fmt.Printf(`
-=================================================================
-   ___  __________     ____
-  / _ \/ ___/ ___/__  / __/_ _____  ____
- / ___/ (_ / (_ / _ \_\ \/ // / _ \/ __/
-/_/   \___/\___/\___/___/\_, /_//_/\__/
-                        /___/
-%sConfig Description: %s
-Source: %s:%d/%s                     Destination: %s:%d/%s
-                                              :.
-                 ============================:::'.
-                 ============================::::::.
-                 ============================::::'
-                                              :'
-Truncate?: %s
-Preserve?: %s
-Disable Triggers?: %s
-Defer Constraints? %s
-No Safety? %s
-Tables: %d
-=================================================================
-`, dryRunLabel,
-				sc.Description,
-				srcConn.Host, srcConn.Port, srcConn.Database,
-				dstConn.Host, dstConn.Port, dstConn.Database,
-				strconv.FormatBool(args.Truncate),
-				strconv.FormatBool(args.Preserve),
-				strconv.FormatBool(args.DisableTriggers),
-				strconv.FormatBool(args.DeferConstraints),
-				strconv.FormatBool(args.NoSafety),
-				len(tasks),
-			)
+			printSyncBanner(sc, &srcConn, &dstConn, args, len(tasks))
 
 			fmt.Print("Do you want to proceed? (yes/no/more): ")
 			response, err := reader.ReadString('\n')
@@ -279,4 +244,45 @@ Tables: %d
 	}
 
 	return nil
+}
+
+// bannerLogo and bannerMatrix hold the ASCII art for the confirmation banner. They are
+// styled with bannerArtStyle (matrix green) at print time so the CLI matches the TUI.
+const bannerLogo = `   ___  __________     ____
+  / _ \/ ___/ ___/__  / __/_ _____  ____
+ / ___/ (_ / (_ / _ \_\ \/ // / _ \/ __/
+/_/   \___/\___/\___/___/\_, /_//_/\__/
+                        /___/`
+
+const bannerMatrix = `                                              :.
+                 ============================:::'.
+                 ============================::::::.
+                 ============================::::'
+                                              :'`
+
+// printSyncBanner renders the pre-sync confirmation banner in the matrix-green palette.
+// lipgloss emits plain text automatically when stdout is not a TTY or NO_COLOR is set.
+func printSyncBanner(sc config.SyncConfig, src, dst *config.ConnectionConfig, args opts.CLIArgs, tableCount int) {
+	sep := bannerArtStyle.Render("=================================================================")
+
+	fmt.Printf("\n%s\n%s\n", sep, bannerArtStyle.Render(bannerLogo))
+	if args.DryRun {
+		fmt.Println(bannerOnStyle.Render("  *** DRY RUN — no changes will be committed ***"))
+	}
+	fmt.Printf("%s %s\n",
+		bannerLabelStyle.Render("Config Description:"),
+		bannerTextStyle.Render(sc.Description))
+	fmt.Printf("%s %s                     %s %s\n",
+		bannerLabelStyle.Render("Source:"),
+		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", src.Host, src.Port, src.Database)),
+		bannerLabelStyle.Render("Destination:"),
+		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", dst.Host, dst.Port, dst.Database)))
+	fmt.Println(bannerArtStyle.Render(bannerMatrix))
+	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Truncate?:"), styledBool(args.Truncate))
+	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Preserve?:"), styledBool(args.Preserve))
+	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Disable Triggers?:"), styledBool(args.DisableTriggers))
+	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Defer Constraints?"), styledBool(args.DeferConstraints))
+	fmt.Printf("%s %s\n", bannerLabelStyle.Render("No Safety?"), styledBool(args.NoSafety))
+	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Tables:"), bannerTextStyle.Render(strconv.Itoa(tableCount)))
+	fmt.Printf("%s\n", sep)
 }
