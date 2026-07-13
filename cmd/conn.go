@@ -3,22 +3,28 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/tui"
-	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
 
-// interactiveTTY reports whether both stdin and stdout are terminals, so interactive
-// prompts are only shown when a human is driving — piped/scripted use stays plain.
-func interactiveTTY() bool {
-	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+// maskedConnString formats a connection as a postgres:// URL with the password replaced
+// by *** (mirrors tui.maskedConnString, kept local so the CLI doesn't reach into tui).
+func maskedConnString(c config.ConnectionConfig) string {
+	userInfo := c.User
+	if c.Password != "" {
+		userInfo += ":***"
+	}
+	s := fmt.Sprintf("postgres://%s@%s:%d/%s", userInfo, c.Host, c.Port, c.Database)
+	if c.SSLMode != "" && c.SSLMode != "disable" {
+		s += "?sslmode=" + c.SSLMode
+	}
+	return s
 }
 
 // connectionDetails renders a connection config as YAML with the password masked.
@@ -82,7 +88,7 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 			},
 			{
 				Name:  "list",
-				Usage: "List all connections; in a terminal, pick one to view its details",
+				Usage: "List all connections with their masked connection strings",
 				Action: func(cCtx *cli.Context) error {
 					conns, err := handler.ListConnections()
 					if err != nil {
@@ -92,16 +98,26 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 						fmt.Println("No connections. Run 'pggosync conn init' to create the default source/dest pair.")
 						return nil
 					}
-					// Piped/scripted: keep the plain, stable list output.
-					if !interactiveTTY() {
-						for _, c := range conns {
-							fmt.Printf("  %s\n", c)
+					// Align names to the longest so the conn strings line up in a column.
+					width := 0
+					for _, c := range conns {
+						if len(c) > width {
+							width = len(c)
 						}
-						return nil
 					}
-					// Interactive: browse the list; selecting a connection replaces it with a
-					// read-only detail view, and esc returns to the list.
-					return tui.RunConnectionBrowser(handler)
+					// lipgloss renders plain, un-escaped text automatically when stdout is not a
+					// TTY or NO_COLOR is set, so this single styled path is safe for scripting too.
+					fmt.Println(bannerLabelStyle.Render("Connections"))
+					for _, c := range conns {
+						name := bannerArtStyle.Render(fmt.Sprintf("%-*s", width, c))
+						conn, err := handler.GetConnection(c)
+						if err != nil {
+							fmt.Printf("  %s\n", name)
+							continue
+						}
+						fmt.Printf("  %s  %s\n", name, bannerTextStyle.Render(maskedConnString(conn)))
+					}
+					return nil
 				},
 			},
 			{
