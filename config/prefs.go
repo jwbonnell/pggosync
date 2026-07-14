@@ -70,7 +70,7 @@ func (uc *UserConfigHandler) SavePrefs(prefs Prefs) error {
 		return err
 	}
 	path := filepath.Join(dir, PrefsFile)
-	return os.WriteFile(path, raw, 0600)
+	return atomicWriteFile(path, raw, 0600)
 }
 
 // IncludePaths returns the extra search base directories from prefs.yaml.

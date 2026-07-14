@@ -50,12 +50,20 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	// Launch a goroutine per task to CopyTo from source into its SafeBuffer.
 	// A semaphore caps simultaneous source connections to concurrency.
+	// prefetchCtx is cancelled when Sync returns (including early error returns), so in-flight and
+	// not-yet-started COPYs stop promptly instead of reading whole tables into buffers nobody drains.
 	sem := make(chan struct{}, concurrency)
 	var prefetchWg sync.WaitGroup
+	prefetchCtx, cancelPrefetch := context.WithCancel(ctx)
+	defer cancelPrefetch()
 
 	go func() {
 		for i := range tasks {
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-prefetchCtx.Done():
+				return
+			}
 			prefetchWg.Add(1)
 			go func(i int) {
 				defer prefetchWg.Done()
@@ -74,7 +82,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 					logf("Prefetching %s...\n", task.FullName())
 				}
 
-				pgConn, err := source.NewPgConn(ctx)
+				pgConn, err := source.NewPgConn(prefetchCtx)
 				if err != nil {
 					bufs[i].SetDoneWithError(fmt.Errorf("source connection: %w", err))
 					if !quiet {
@@ -82,9 +90,9 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 					}
 					return
 				}
-				defer pgConn.Close(ctx)
+				defer pgConn.Close(context.Background())
 
-				_, err = pgConn.CopyTo(ctx, bufs[i], query)
+				_, err = pgConn.CopyTo(prefetchCtx, bufs[i], query)
 				if err != nil {
 					bufs[i].SetDoneWithError(err)
 				} else {

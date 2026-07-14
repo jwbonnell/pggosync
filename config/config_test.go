@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestPathHandler struct{}
@@ -88,4 +89,22 @@ func TestConfigHandler_ListConnections(t *testing.T) {
 			assert.True(t, slices.Equal(tt.expected, got), "listed connections should match expected")
 		})
 	}
+}
+
+// TestConfigHandler_ListConnections_SkipsPrefsKeepsDotted guards M5: prefs.yaml must not be reported
+// as a connection, and a connection whose name contains a dot must remain visible.
+func TestConfigHandler_ListConnections_SkipsPrefsKeepsDotted(t *testing.T) {
+	defer cleanupTest()
+	handler := &UserConfigHandler{PathHandler: TestPathHandler{}}
+
+	require.NoError(t, handler.InitConnection("normal"))
+	require.NoError(t, handler.InitConnection("my.db"))
+	// SavePrefs writes prefs.yaml into the same directory as connections.
+	require.NoError(t, handler.SavePrefs(Prefs{}))
+
+	got, err := handler.ListConnections()
+	require.NoError(t, err)
+	assert.Contains(t, got, "normal")
+	assert.Contains(t, got, "my.db")
+	assert.NotContains(t, got, "prefs")
 }

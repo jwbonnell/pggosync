@@ -111,6 +111,19 @@ func (uc *UserConfigHandler) ConnectionExists(name string) (bool, error) {
 	return false, err
 }
 
+// DeleteConnection removes a saved connection's YAML file. It returns nil if the file does not exist.
+func (uc *UserConfigHandler) DeleteConnection(name string) error {
+	dir, err := uc.configDir()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filepath.Join(dir, fmt.Sprintf("%s.yaml", name)))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // GetConnection loads a named connection config.
 func (uc *UserConfigHandler) GetConnection(name string) (ConnectionConfig, error) {
 	dir, err := uc.configDir()
@@ -145,7 +158,7 @@ func (uc *UserConfigHandler) SaveConnection(name string, conn ConnectionConfig) 
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, fmt.Sprintf("%s.yaml", name)), data, 0600)
+	return atomicWriteFile(filepath.Join(dir, fmt.Sprintf("%s.yaml", name)), data, 0600)
 }
 
 // ListConnections returns the names of all saved connections.
@@ -166,11 +179,13 @@ func (uc *UserConfigHandler) ListConnections() ([]string, error) {
 		if f.IsDir() {
 			continue
 		}
-		parts := strings.SplitN(f.Name(), ".", 2)
-		if len(parts) != 2 || parts[1] != "yaml" {
+		name := f.Name()
+		// Only .yaml files are connections; skip reserved files (prefs.yaml) that share the dir.
+		if !strings.HasSuffix(name, ".yaml") || name == PrefsFile {
 			continue
 		}
-		names = append(names, parts[0])
+		// TrimSuffix (not SplitN on ".") so connection names containing dots stay visible.
+		names = append(names, strings.TrimSuffix(name, ".yaml"))
 	}
 	return names, nil
 }

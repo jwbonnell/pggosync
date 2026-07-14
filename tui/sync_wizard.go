@@ -151,6 +151,12 @@ func (m syncWizardModel) Init() tea.Cmd {
 	return m.form.Init()
 }
 
+// isRunning reports whether a sync is currently in flight, so the top-level model can route ctrl+c
+// to this wizard (which cancels the sync's context) instead of quitting the process outright.
+func (m syncWizardModel) isRunning() bool {
+	return m.phase == phaseRunning
+}
+
 // ── Form builders ──────────────────────────────────────────────────────────────
 
 // buildPickConnectionForm creates a dropdown of all saved connections, writing the selection into target.

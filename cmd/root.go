@@ -42,11 +42,12 @@ func Execute(build string, args []string) {
 	}
 }
 
-// usageError prints the current command's usage/help (to stdout) and returns the
-// formatted error, so a missing/invalid flag shows how to invoke the command rather
-// than just a bare message. ShowSubcommandHelp renders the command's own name, usage,
-// and flags directly from cCtx.Command.
+// usageError prints the current command's usage/help (to stderr, alongside the error) and returns
+// the formatted error, so a missing/invalid flag shows how to invoke the command rather than just a
+// bare message. Writing help to stderr keeps stdout clean for downstream capture. ShowSubcommandHelp
+// renders the command's own name, usage, and flags directly from cCtx.Command.
 func usageError(cCtx *cli.Context, format string, a ...any) error {
+	cCtx.App.Writer = os.Stderr
 	_ = cli.ShowSubcommandHelp(cCtx)
 	return fmt.Errorf(format, a...)
 }
@@ -65,10 +66,15 @@ func requireSingleArg(cCtx *cli.Context, what string) (string, error) {
 	return cCtx.Args().First(), nil
 }
 
-// requireConnections exits if no connections have been created yet.
+// requireConnections exits if no connections have been created yet. A real IO error listing them is
+// distinct from "none exist": the former exits 1 (so scripts see a failure), the latter exits 0.
 func requireConnections(handler *config.UserConfigHandler) {
 	conns, err := handler.ListConnections()
-	if err != nil || len(conns) == 0 {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error: could not list connections:", err)
+		os.Exit(1)
+	}
+	if len(conns) == 0 {
 		fmt.Println("No connections found. Run 'pggosync conn init' to create the default source/dest pair.")
 		os.Exit(0)
 	}

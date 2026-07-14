@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"slices"
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
@@ -12,12 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jwbonnell/pggosync/db"
 )
-
-var reservedColumnNames = []string{
-	"order",
-	"limit",
-	"offset",
-}
 
 type ReadDataSource interface {
 	GetTables(ctx context.Context) ([]db.Table, error)
@@ -200,10 +193,12 @@ func (r *ReaderDataSource) GetColumns(ctx context.Context) ([]db.Column, error) 
 		return nil, err
 	}
 
+	// Quote every column identifier so reserved words, mixed-case, and special-character
+	// names are all safe to interpolate into COPY/INSERT column lists. Scrub-rule matching
+	// trims the quotes back off (see task_resolver.validateScrubColumns), so callers that
+	// compare against user input are unaffected.
 	for i := range cols {
-		if slices.Contains(reservedColumnNames, cols[i].Name) {
-			cols[i].Name = fmt.Sprintf("\"%s\"", cols[i].Name)
-		}
+		cols[i].Name = db.QuoteIdentifier(cols[i].Name)
 	}
 
 	return cols, nil
@@ -231,6 +226,12 @@ func (r *ReaderDataSource) GetPrimaryKeys(ctx context.Context) ([]db.PrimaryKey,
 	`)
 	if err != nil {
 		return nil, err
+	}
+
+	// Quote PK column identifiers to match the quoting applied in GetColumns, so the
+	// ON CONFLICT target and the "is this column a PK?" comparison in TableSync stay consistent.
+	for i := range pks {
+		pks[i].Column = db.QuoteIdentifier(pks[i].Column)
 	}
 
 	return pks, nil

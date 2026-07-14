@@ -103,7 +103,7 @@ func (uc *UserConfigHandler) SaveProfile(p SyncProfile) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, p.Name+".yaml"), data, 0600)
+	return atomicWriteFile(filepath.Join(dir, p.Name+".yaml"), data, 0600)
 }
 
 // DeleteProfile removes a profile file from the user profiles directory.

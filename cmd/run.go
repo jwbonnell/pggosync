@@ -204,17 +204,18 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 			fmt.Print("Do you want to proceed? (yes/no/more): ")
 			response, err := reader.ReadString('\n')
 			if err != nil {
-				return fmt.Errorf("error reading input: %w", err)
+				// EOF here usually means input was piped without an answer; point at the scripting flag.
+				return fmt.Errorf("could not read confirmation (%w) — pass --skip-confirmation for non-interactive use", err)
 			}
 
-			switch strings.TrimSpace(response) {
-			case "yes":
+			switch strings.ToLower(strings.TrimSpace(response)) {
+			case "yes", "y":
 				fmt.Println("Starting sync")
 				goto proceed
-			case "no":
+			case "no", "n":
 				fmt.Println("Sync cancelled")
 				return nil
-			case "more":
+			case "more", "m":
 				fmt.Printf("\nTables to sync (%d):\n", len(tasks))
 				for _, t := range tasks {
 					strategy := "upsert"
@@ -239,7 +240,8 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 				}
 				fmt.Println()
 			default:
-				return fmt.Errorf("invalid input %q — expected yes, no, or more", strings.TrimSpace(response))
+				// Re-prompt on unrecognized input rather than aborting the whole command.
+				fmt.Printf("Please answer yes, no, or more (got %q)\n", strings.TrimSpace(response))
 			}
 		}
 	proceed:

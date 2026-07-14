@@ -85,6 +85,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case launchProfileMsg:
 		wiz := newSyncWizardModelFromProfile(m.handler, msg.profile)
+		// Give the wizard the current size before building the preview so its viewport isn't
+		// created with a zero (negative) width/height.
+		wiz, _ = wiz.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		wiz, cmd := wiz.buildPreview()
 		m.syncWizard = wiz
 		m.screen = syncWizardScreen
@@ -102,21 +105,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.menu.Init(), cmd)
 		case syncWizardScreen:
 			m.syncWizard = newSyncWizardModel(m.handler)
-			return m, m.syncWizard.Init()
+			var cmd tea.Cmd
+			m.syncWizard, cmd = m.syncWizard.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, tea.Batch(m.syncWizard.Init(), cmd)
 		case userConfigScreen:
 			m.userConfig = newUserConfigModel(m.handler)
-			return m, m.userConfig.Init()
+			var cmd tea.Cmd
+			m.userConfig, cmd = m.userConfig.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, tea.Batch(m.userConfig.Init(), cmd)
 		case syncConfigScreen:
 			m.syncConfig = newSyncConfigModel()
-			return m, m.syncConfig.Init()
+			var cmd tea.Cmd
+			m.syncConfig, cmd = m.syncConfig.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, tea.Batch(m.syncConfig.Init(), cmd)
 		case profileScreen:
 			m.profiles = newProfileModel(m.handler)
-			return m, m.profiles.Init()
+			var cmd tea.Cmd
+			m.profiles, cmd = m.profiles.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, tea.Batch(m.profiles.Init(), cmd)
 		}
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
+			// If a sync is in flight, let the wizard handle ctrl+c (below) so it cancels the
+			// sync's context cleanly instead of the process being torn down mid-write.
+			if !(m.screen == syncWizardScreen && m.syncWizard.isRunning()) {
+				return m, tea.Quit
+			}
 		}
 	}
 

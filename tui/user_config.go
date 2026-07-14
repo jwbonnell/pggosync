@@ -132,6 +132,8 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 				return m.handleListSelect()
 			case "n":
 				return m.openNewForm()
+			case "d":
+				return m.deleteSelected()
 			}
 		} else if msg.String() == "esc" {
 			// In form phases, esc returns to the connection list.
@@ -182,6 +184,22 @@ func (m userConfigModel) handleListSelect() (userConfigModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
+// deleteSelected removes the highlighted connection (ignoring the "(+ New connection)" entry) and refreshes the list.
+func (m userConfigModel) deleteSelected() (userConfigModel, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(connectionListItem)
+	if !ok || item.name == "(+ New connection)" {
+		return m, nil
+	}
+	if err := m.handler.DeleteConnection(item.name); err != nil {
+		m.err = fmt.Sprintf("could not delete %q: %v", item.name, err)
+		return m, nil
+	}
+	m.err = ""
+	m.status = fmt.Sprintf("Deleted connection %q", item.name)
+	m.list = m.buildList()
+	return m, nil
+}
+
 // openNewForm resets editingName and switches to a blank connection form.
 func (m userConfigModel) openNewForm() (userConfigModel, tea.Cmd) {
 	m.editingName = ""
@@ -210,6 +228,13 @@ func (m userConfigModel) saveConnection() (userConfigModel, tea.Cmd) {
 	}
 	m.err = ""
 	m.status = fmt.Sprintf("Saved connection %q", name)
+	// If the user renamed an existing connection, remove the old file so it isn't orphaned.
+	if m.editingName != "" && m.editingName != name {
+		if err := m.handler.DeleteConnection(m.editingName); err != nil {
+			m.err = fmt.Sprintf("saved %q but could not remove old %q: %v", name, m.editingName, err)
+		}
+	}
+	m.editingName = ""
 	m.phase = ucPhaseList
 	m.list = m.buildList()
 	return m, nil
@@ -227,7 +252,7 @@ func (m userConfigModel) View() string {
 		if m.status != "" {
 			sb.WriteString("\n" + successStyle.Render(m.status))
 		}
-		sb.WriteString("\n" + mutedStyle.Render("enter: edit   n: new   esc: back"))
+		sb.WriteString("\n" + mutedStyle.Render("enter: edit   n: new   d: delete   esc: back"))
 
 	case ucPhaseForm:
 		sb.WriteString(wizardTitleStyle.Render("Connection Config"))

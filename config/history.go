@@ -64,6 +64,11 @@ func (uc *UserConfigHandler) LoadSyncHistory() (SyncHistory, error) {
 func (uc *UserConfigHandler) SaveSyncHistory(entry SyncHistoryEntry) error {
 	h, err := uc.LoadSyncHistory()
 	if err != nil {
+		// The existing history is unreadable/corrupt. Preserve it for recovery instead of
+		// silently overwriting, then continue with a fresh history.
+		if path, perr := uc.historyPath(); perr == nil {
+			_ = os.Rename(path, path+".corrupt")
+		}
 		h = SyncHistory{}
 	}
 	h.Entries = append(h.Entries, entry)
@@ -81,5 +86,5 @@ func (uc *UserConfigHandler) SaveSyncHistory(entry SyncHistoryEntry) error {
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return atomicWriteFile(path, data, 0600)
 }

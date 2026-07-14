@@ -113,12 +113,14 @@ func (rw *ReadWriteDatasource) SetSequence(ctx context.Context, sequence string,
 	return nil
 }
 
-// InsertFromTempTable runs the final upsert or preserve INSERT from the staging temp table into the destination.
-func (rw *ReadWriteDatasource) InsertFromTempTable(ctx context.Context, tempTable string, destTable string, sourceFields []string, destFields []string, onConflict string, action string) error {
+// InsertFromTempTable runs the final upsert or preserve INSERT from the staging temp table into the
+// destination and returns the number of rows actually inserted or updated (excluding conflicts that
+// hit DO NOTHING), which is the meaningful figure to report — not the staging COPY row count.
+func (rw *ReadWriteDatasource) InsertFromTempTable(ctx context.Context, tempTable string, destTable string, sourceFields []string, destFields []string, onConflict string, action string) (int64, error) {
 	sql := fmt.Sprintf("INSERT INTO %s (%s) (SELECT %s FROM %s) ON CONFLICT (%s) DO %s", destTable, strings.Join(sourceFields, ","), strings.Join(destFields, ","), tempTable, onConflict, action)
-	_, err := rw.DB.Exec(ctx, sql)
+	tag, err := rw.DB.Exec(ctx, sql)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return tag.RowsAffected(), nil
 }

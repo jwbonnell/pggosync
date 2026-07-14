@@ -43,8 +43,7 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 		}
 
 		dconn := t.destination.DB.PgConn()
-		cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", ttName, strings.Join(scrubbedColumns, ",")))
-		if err != nil {
+		if _, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", ttName, strings.Join(scrubbedColumns, ","))); err != nil {
 			return 0, fmt.Errorf("CopyFrom temp table %s: %w", ttName, err)
 		}
 
@@ -62,10 +61,10 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 			}
 		}
 
-		if err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.SQLName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action); err != nil {
+		rows, err := t.destination.InsertFromTempTable(ctx, ttName, task.Table.SQLName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action)
+		if err != nil {
 			return 0, fmt.Errorf("TableSync.InsertFromTempTable %w", err)
 		}
-		rows := cftag.RowsAffected()
 		if err := t.syncSequences(ctx, task); err != nil {
 			return rows, err
 		}
