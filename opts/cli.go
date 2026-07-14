@@ -2,6 +2,7 @@ package opts
 
 type CLIArgs struct {
 	Truncate         bool
+	Cascade          bool
 	Preserve         bool
 	DeferConstraints bool
 	DisableTriggers  bool

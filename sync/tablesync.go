@@ -37,8 +37,8 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 			return 0, fmt.Errorf("no primary key found for table %s", task.Table.FullName())
 		}
 
-		ttName := db.GenTempTableName(0, task.Table.Name)
-		if err := t.destination.CreateTempTable(ctx, ttName, task.Table.FullName()); err != nil {
+		ttName := db.QuoteIdentifier(db.GenTempTableName(0, task.Table.Name))
+		if err := t.destination.CreateTempTable(ctx, ttName, task.Table.SQLName()); err != nil {
 			return 0, fmt.Errorf("datasource.CreateTempTable: %w", err)
 		}
 
@@ -62,7 +62,7 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 			}
 		}
 
-		if err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.FullName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action); err != nil {
+		if err = t.destination.InsertFromTempTable(ctx, ttName, task.Table.SQLName(), sharedColumns, sharedColumns, strings.Join(destPKs, ","), action); err != nil {
 			return 0, fmt.Errorf("TableSync.InsertFromTempTable %w", err)
 		}
 		rows := cftag.RowsAffected()
@@ -74,17 +74,17 @@ func (t *TableSync) SyncFromBuffer(ctx context.Context, task *Task, buf io.Reade
 	}
 
 	if task.DeferConstraints {
-		if err := t.destination.DeleteAll(ctx, task.Table.FullName()); err != nil {
+		if err := t.destination.DeleteAll(ctx, task.Table.SQLName()); err != nil {
 			return 0, fmt.Errorf("TableSync DeleteAll %w", err)
 		}
 	} else {
-		if err := t.destination.Truncate(ctx, task.Table.FullName()); err != nil {
-			return 0, fmt.Errorf("TableSync Truncate %w", err)
+		if err := t.destination.Truncate(ctx, task.Table.SQLName(), task.Cascade); err != nil {
+			return 0, fmt.Errorf("TableSync Truncate %s (pass --cascade to also empty referencing tables, or --defer-constraints): %w", task.Table.FullName(), err)
 		}
 	}
 
 	dconn := t.destination.DB.PgConn()
-	cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", task.Table.FullName(), strings.Join(scrubbedColumns, ",")))
+	cftag, err := dconn.CopyFrom(ctx, buf, fmt.Sprintf("COPY %s (%s) FROM STDIN", task.Table.SQLName(), strings.Join(scrubbedColumns, ",")))
 	if err != nil {
 		return 0, fmt.Errorf("CopyFrom %w", err)
 	}
@@ -102,7 +102,7 @@ func (t *TableSync) syncSequences(ctx context.Context, task *Task) error {
 		if err != nil {
 			return fmt.Errorf("syncSequences read %s.%s: %w", seq.SequenceSchema, seq.Sequence, err)
 		}
-		qualifiedName := fmt.Sprintf("%s.%s", seq.SequenceSchema, seq.Sequence)
+		qualifiedName := db.QuoteIdentifier(seq.SequenceSchema) + "." + db.QuoteIdentifier(seq.Sequence)
 		if err := t.destination.SetSequence(ctx, qualifiedName, int(val)); err != nil {
 			return fmt.Errorf("syncSequences set %s: %w", qualifiedName, err)
 		}

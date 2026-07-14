@@ -13,9 +13,22 @@ type Table struct {
 	Name   string `db:"name"`
 }
 
-// FullName returns the schema-qualified table name as "schema.name".
+// FullName returns the schema-qualified table name as "schema.name". It is for display, logging,
+// error messages, and map keys — NOT for interpolation into SQL. Use SQLName for that.
 func (t *Table) FullName() string {
 	return fmt.Sprintf("%s.%s", t.Schema, t.Name)
+}
+
+// SQLName returns the schema-qualified table name with each identifier safely quoted for use in
+// SQL (e.g. `"public"."my table"`). This is the form that must be interpolated into queries so
+// mixed-case, reserved-word, or special-character schema/table names do not break or inject.
+func (t *Table) SQLName() string {
+	return pgx.Identifier{t.Schema, t.Name}.Sanitize()
+}
+
+// QuoteIdentifier safely quotes a single SQL identifier (e.g. a generated temp table name).
+func QuoteIdentifier(name string) string {
+	return pgx.Identifier{name}.Sanitize()
 }
 
 // Equal reports whether two tables share the same schema and name (case-sensitive).

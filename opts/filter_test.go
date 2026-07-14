@@ -24,3 +24,16 @@ func TestApplyParamToFilter(t *testing.T) {
 		assert.Equal(t, test.expected, result)
 	}
 }
+
+// TestApplyParamToFilterNoParams guards H7: with no params, placeholders are left intact rather
+// than substituted with an empty string.
+func TestApplyParamToFilterNoParams(t *testing.T) {
+	assert.Equal(t, "WHERE id = {1}", ApplyParamToFilter(nil, "WHERE id = {1}"))
+	assert.Equal(t, "WHERE 1=1", ApplyParamToFilter(nil, "WHERE 1=1"))
+}
+
+func TestUnresolvedPlaceholders(t *testing.T) {
+	assert.Equal(t, []string{"{1}"}, UnresolvedPlaceholders("WHERE id = {1}"))
+	assert.Equal(t, []string{"{1}", "{2}"}, UnresolvedPlaceholders("a = {1} AND b = {2}"))
+	assert.Empty(t, UnresolvedPlaceholders("WHERE id = 5"))
+}

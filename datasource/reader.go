@@ -54,11 +54,13 @@ func NewReadDataSource(Name string, u url.URL) (*ReaderDataSource, error) {
 	ctx := context.Background()
 	err = datasource.StatusCheck(ctx)
 	if err != nil {
-		return &ReaderDataSource{}, fmt.Errorf("db StatusCheck failed: %w", err)
+		_ = conn.Close(ctx)
+		return nil, fmt.Errorf("db StatusCheck failed: %w", err)
 	}
 
 	_, err = datasource.GetTables(ctx)
 	if err != nil {
+		_ = conn.Close(ctx)
 		return nil, err
 	}
 
@@ -262,7 +264,8 @@ func (r *ReaderDataSource) GetSequences(ctx context.Context) ([]db.Sequence, err
 // GetSequenceValue reads the current last_value of a sequence without advancing it.
 func (r *ReaderDataSource) GetSequenceValue(ctx context.Context, schema, sequence string) (int64, error) {
 	var value int64
-	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT last_value FROM %s.%s", schema, sequence)).Scan(&value)
+	qualified := pgx.Identifier{schema, sequence}.Sanitize()
+	err := r.DB.QueryRow(ctx, fmt.Sprintf("SELECT last_value FROM %s", qualified)).Scan(&value)
 	if err != nil {
 		return 0, fmt.Errorf("GetSequenceValue %s.%s: %w", schema, sequence, err)
 	}

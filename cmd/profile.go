@@ -2,11 +2,24 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
+
+// splitProfileTables splits a profile's comma-separated raw table input into individual --table
+// arguments, matching how the TUI stores and later expands the selection.
+func splitProfileTables(raw string) []string {
+	var tables []string
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			tables = append(tables, p)
+		}
+	}
+	return tables
+}
 
 // profileCmd returns a CLI command with subcommands for listing, inspecting,
 // validating, and running saved sync profiles.
@@ -129,6 +142,9 @@ func profileCmd(handler *config.UserConfigHandler) *cli.Command {
 					if !cCtx.IsSet("truncate") {
 						args.Truncate = profile.Truncate
 					}
+					if !cCtx.IsSet("cascade") {
+						args.Cascade = profile.Cascade
+					}
 					if !cCtx.IsSet("preserve") {
 						args.Preserve = profile.Preserve
 					}
@@ -149,6 +165,9 @@ func profileCmd(handler *config.UserConfigHandler) *cli.Command {
 					}
 					if len(args.Groups) == 0 {
 						args.Groups = profile.Groups
+					}
+					if !cCtx.IsSet("table") && profile.RawTableInput != "" {
+						args.Tables = splitProfileTables(profile.RawTableInput)
 					}
 
 					if sourceName == "" {

@@ -213,7 +213,8 @@ func validateAgainstDatabases(cCtx *cli.Context, handler *config.UserConfigHandl
 
 	truncate := cCtx.Bool("truncate")
 	preserve := cCtx.Bool("preserve")
-	resolver := sync.NewTaskResolver(source, destination, sc.Groups, truncate, preserve, false, false, excludedTables)
+	// Cascade is irrelevant to validation (no truncate is executed), so pass false.
+	resolver := sync.NewTaskResolver(source, destination, sc.Groups, truncate, false, preserve, false, false, excludedTables)
 	tasks, err := resolver.Resolve(cCtx.Context, cCtx.StringSlice("group"), cCtx.StringSlice("table"))
 	if err != nil {
 		return err

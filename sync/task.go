@@ -23,6 +23,7 @@ type Task struct {
 	Filter           string
 	Preserve         bool
 	Truncate         bool
+	Cascade          bool
 	DeferConstraints bool
 	DestRowCount     int64
 	SourceRowCount   int64 // set by TUI preview via GetRowCountFiltered; 0 means unknown

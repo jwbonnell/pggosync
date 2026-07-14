@@ -19,7 +19,7 @@ type Trigger struct {
 func DisableUserTriggers(ctx context.Context, db *pgx.Conn, triggers []Trigger) error {
 	var err error
 	for _, t := range triggers {
-		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER %s", t.RelID, t.Name))
+		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER %s", t.RelID, QuoteIdentifier(t.Name)))
 		if err != nil {
 			return fmt.Errorf("pgx.Exec: disable user triggers: %w", err)
 		}
@@ -32,9 +32,9 @@ func DisableUserTriggers(ctx context.Context, db *pgx.Conn, triggers []Trigger) 
 func RestoreUserTriggers(ctx context.Context, db *pgx.Conn, triggers []Trigger) error {
 	var err error
 	for _, t := range triggers {
-		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER %s", t.RelID, t.Name))
+		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER %s", t.RelID, QuoteIdentifier(t.Name)))
 		if err != nil {
-			return fmt.Errorf("pgx.Exec: disable user triggers: %w", err)
+			return fmt.Errorf("pgx.Exec: enable user triggers: %w", err)
 		}
 	}
 

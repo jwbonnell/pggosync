@@ -37,6 +37,12 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		outMu.Unlock()
 	}
 
+	// Guard against a caller passing a non-positive concurrency: 0 gives an unbuffered
+	// semaphore that deadlocks the prefetch launcher, and a negative value panics make().
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
 	bufs := make([]*SafeBuffer, len(tasks))
 	for i := range bufs {
 		bufs[i] = NewSafeBuffer(&bytes.Buffer{})
@@ -62,7 +68,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 					filterClause = "WHERE " + task.Filter
 				}
 				query := fmt.Sprintf("COPY (SELECT %s FROM %s %s) TO STDOUT",
-					strings.Join(cols, ", "), task.FullName(), filterClause)
+					strings.Join(cols, ", "), task.SQLName(), filterClause)
 
 				if !quiet {
 					logf("Prefetching %s...\n", task.FullName())

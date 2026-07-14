@@ -18,7 +18,7 @@ func DeferConstraints(ctx context.Context, db *pgx.Conn, ndc []NonDeferrableCons
 	var err error
 	for _, n := range ndc {
 		t := Table{Schema: n.Schema, Name: n.Table}
-		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ALTER CONSTRAINT %s DEFERRABLE", t.FullName(), n.ConstraintName))
+		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ALTER CONSTRAINT %s DEFERRABLE", t.SQLName(), QuoteIdentifier(n.ConstraintName)))
 		if err != nil {
 			return fmt.Errorf("pgx.Exec: set non-deferrable constraint to deferrable: %w", err)
 		}
@@ -41,7 +41,7 @@ func RestoreContraints(ctx context.Context, db *pgx.Conn, ndc []NonDeferrableCon
 
 	for _, n := range ndc {
 		t := Table{Schema: n.Schema, Name: n.Table}
-		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ALTER CONSTRAINT %s NOT DEFERRABLE", t.FullName(), n.ConstraintName))
+		_, err = db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ALTER CONSTRAINT %s NOT DEFERRABLE", t.SQLName(), QuoteIdentifier(n.ConstraintName)))
 		if err != nil {
 			return fmt.Errorf("pgx.Exec: set non-deferrable constraint to NOT deferrable: %w", err)
 		}

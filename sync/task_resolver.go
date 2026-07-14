@@ -19,6 +19,7 @@ type TaskResolver struct {
 	destination      *datasource.ReadWriteDatasource
 	groups           map[string]config.Group
 	truncate         bool
+	cascade          bool
 	preserve         bool
 	deferConstraints bool
 	disableTriggers  bool
@@ -26,11 +27,12 @@ type TaskResolver struct {
 }
 
 // NewTaskResolver creates a TaskResolver with all sync options baked in for use across multiple Resolve calls.
-func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]config.Group, truncate bool, preserve bool, deferConstraints bool, disableTriggers bool, excluded []db.Table) *TaskResolver {
+func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasource.ReadWriteDatasource, groups map[string]config.Group, truncate bool, cascade bool, preserve bool, deferConstraints bool, disableTriggers bool, excluded []db.Table) *TaskResolver {
 	return &TaskResolver{
 		source:           source,
 		destination:      destination,
 		truncate:         truncate,
+		cascade:          cascade,
 		groups:           groups,
 		preserve:         preserve,
 		deferConstraints: deferConstraints,
@@ -67,6 +69,7 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 				Table:            t,
 				Filter:           "",
 				Truncate:         tr.truncate,
+				Cascade:          tr.cascade,
 				Preserve:         tr.preserve,
 				DeferConstraints: tr.deferConstraints,
 			})
@@ -138,7 +141,7 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 		}
 
 		if task.Truncate && !task.Preserve {
-			count, err := tr.destination.GetRowCount(ctx, task.Table.FullName())
+			count, err := tr.destination.GetRowCount(ctx, task.Table.SQLName())
 			if err != nil {
 				return nil, err
 			}
@@ -172,6 +175,9 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 		}
 
 		filter := opts.ApplyParamToFilter(params, entry.Filter)
+		if ph := opts.UnresolvedPlaceholders(filter); len(ph) > 0 {
+			return nil, fmt.Errorf("group %q table %q: filter has unfilled placeholder(s) %s — pass params like --group %s:p1,p2", groupID, entry.Table, strings.Join(ph, ", "), groupID)
+		}
 
 		truncate := tr.truncate
 		if entry.Truncate != nil {
@@ -187,6 +193,7 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 			Filter:           filter,
 			Preserve:         preserve,
 			Truncate:         truncate,
+			Cascade:          tr.cascade,
 			DeferConstraints: tr.deferConstraints,
 			ScrubRules:       entry.Scrub,
 		})
@@ -210,6 +217,7 @@ func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Tas
 		Table:            t,
 		Filter:           parsed.Filter,
 		Truncate:         tr.truncate,
+		Cascade:          tr.cascade,
 		Preserve:         tr.preserve,
 		DeferConstraints: tr.deferConstraints,
 		ScrubRules:       parsed.ScrubRules,

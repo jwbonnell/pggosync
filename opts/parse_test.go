@@ -25,6 +25,15 @@ func TestParseGroupArg(t *testing.T) {
 	}
 }
 
+// TestParseGroupArgNoParams guards H7: a group with no params yields a nil slice, not [""], so
+// ApplyParamToFilter leaves {N} placeholders untouched instead of substituting an empty string.
+func TestParseGroupArgNoParams(t *testing.T) {
+	groupID, params, err := ParseGroupArg("base")
+	assert.NoError(t, err)
+	assert.Equal(t, "base", groupID)
+	assert.Nil(t, params)
+}
+
 func TestParseTableArg(t *testing.T) {
 	var tests = []struct {
 		input    string
@@ -120,6 +129,9 @@ func TestSplitTableArg(t *testing.T) {
 		{`public.users:"country = 'US'":email=hash`, []string{"public.users", `"country = 'US'"`, "email=hash"}},
 		{"public.users::email=hash,ssn=redact", []string{"public.users", "", "email=hash,ssn=redact"}},
 		{"public.users::email=static:foo", []string{"public.users", "", "email=static:foo"}},
+		// H2: colons inside a single-quoted SQL literal must not split the filter.
+		{"public.events:created_at > '2024-01-01 12:30:00'", []string{"public.events", "created_at > '2024-01-01 12:30:00'"}},
+		{"public.events:created_at > '12:30:00':email=hash", []string{"public.events", "created_at > '12:30:00'", "email=hash"}},
 	}
 
 	for _, tt := range tests {

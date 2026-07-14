@@ -41,7 +41,7 @@ func TestTruncate(t *testing.T) {
 	rw.DB.QueryRow(ctx, "SELECT COUNT(id) FROM dummy_truncate").Scan(&rowCount)
 	assert.Equal(t, 30, rowCount)
 
-	rw.Truncate(ctx, "dummy_truncate")
+	rw.Truncate(ctx, "dummy_truncate", false)
 
 	rowCount = -1
 	rw.DB.QueryRow(ctx, "SELECT COUNT(id) FROM dummy_truncate").Scan(&rowCount)

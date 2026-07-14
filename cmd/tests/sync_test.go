@@ -37,8 +37,8 @@ type City struct {
 	CountryID int    `db:"country_id"`
 }
 
-// TestTruncate syncs only the root `country` table (no FK dependents) so that
-// truncate without --defer-constraints works without ordering issues.
+// TestTruncate syncs the `country` table, which is referenced by a foreign key, so plain TRUNCATE
+// would error; --cascade opts into TRUNCATE ... CASCADE to empty it (and its dependents).
 func TestTruncate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode...skipping integration test")
@@ -57,9 +57,10 @@ func TestTruncate(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--table", "country")
 	args = append(args, "--truncate")
+	args = append(args, "--cascade")
 	args = append(args, "--skip-confirmation")
 	cmd.Execute("test", args)
 
@@ -87,7 +88,7 @@ func TestTruncateDeferConstraints(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
 	args = append(args, "--truncate")
@@ -119,7 +120,7 @@ func TestTruncateDisableTriggers(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1000")
 	args = append(args, "--truncate")
@@ -152,7 +153,7 @@ func TestSync(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--group", "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
 	cmd.Execute("test", args)
@@ -182,7 +183,7 @@ func TestSync_Preserve(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--group")
 	args = append(args, "country_var_1:1001")
 	args = append(args, "--skip-confirmation")
@@ -212,7 +213,7 @@ func TestSync_Table(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country")
 	args = append(args, "--skip-confirmation")
@@ -245,9 +246,10 @@ func TestDryRun(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--table", "country")
 	args = append(args, "--truncate")
+	args = append(args, "--cascade")
 	args = append(args, "--dry-run")
 	args = append(args, "--skip-confirmation")
 	cmd.Execute("test", args)
@@ -267,7 +269,7 @@ func TestValidate(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "config", "validate")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "../../_configs/configs/default.ym")
+	args = append(args, "../../_configs/configs/default.yml")
 	// Should exit cleanly without calling log.Fatal.
 	cmd.Execute("test", args)
 }
@@ -288,7 +290,7 @@ func TestSync_TableMulti(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country")
 	args = append(args, "--table")
@@ -327,10 +329,11 @@ func TestSync_Scrub(t *testing.T) {
 	args := os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--table")
 	args = append(args, "country::country_name=hash")
 	args = append(args, "--truncate")
+	args = append(args, "--cascade")
 	args = append(args, "--skip-confirmation")
 	cmd.Execute("test", args)
 
@@ -344,9 +347,10 @@ func TestSync_Scrub(t *testing.T) {
 	args = os.Args[0:1]
 	args = append(args, "run")
 	args = append(args, "--source", "source", "--dest", "dest")
-	args = append(args, "--config", "../../_configs/configs/default.ym")
+	args = append(args, "--config", "../../_configs/configs/default.yml")
 	args = append(args, "--table", "country")
 	args = append(args, "--truncate")
+	args = append(args, "--cascade")
 	args = append(args, "--skip-confirmation")
 	cmd.Execute("test", args)
 }

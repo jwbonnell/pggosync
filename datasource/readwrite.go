@@ -33,20 +33,28 @@ func NewReadWriteDataSource(Name string, u url.URL) (*ReadWriteDatasource, error
 	ctx := context.Background()
 	err = datasource.StatusCheck(ctx)
 	if err != nil {
-		return &ReadWriteDatasource{}, fmt.Errorf("db StatusCheck failed: %w", err)
+		_ = db.Close(ctx)
+		return nil, fmt.Errorf("db StatusCheck failed: %w", err)
 	}
 
 	_, err = datasource.GetTables(ctx)
 	if err != nil {
+		_ = db.Close(ctx)
 		return nil, err
 	}
 
 	return &datasource, nil
 }
 
-// Truncate issues TRUNCATE CASCADE, which cascades to dependent tables — safe because the transaction covers all tasks.
-func (rw *ReadWriteDatasource) Truncate(ctx context.Context, table string) error {
-	_, err := rw.DB.Exec(ctx, fmt.Sprintf("TRUNCATE %s CASCADE", table))
+// Truncate issues TRUNCATE on the table. When cascade is true it appends CASCADE, which also empties
+// any table with a foreign key to the target; otherwise a plain TRUNCATE errors if the table is
+// referenced, so cascading data loss must be explicitly opted into by the caller.
+func (rw *ReadWriteDatasource) Truncate(ctx context.Context, table string, cascade bool) error {
+	stmt := fmt.Sprintf("TRUNCATE %s", table)
+	if cascade {
+		stmt += " CASCADE"
+	}
+	_, err := rw.DB.Exec(ctx, stmt)
 	if err != nil {
 		return err
 	}

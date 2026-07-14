@@ -18,10 +18,15 @@ type TableArg struct {
 }
 
 // ParseGroupArg parses "groupID" or "groupID:p1,p2,…" and returns the group ID and a positional params slice.
+// A group with no params returns a nil slice (not [""]), so ApplyParamToFilter leaves any {N}
+// placeholders untouched instead of substituting an empty string into the WHERE clause.
 func ParseGroupArg(arg string) (string, []string, error) {
 	groupID, params, err := parsePrimaryArg(arg)
 	if err != nil {
 		return "", nil, fmt.Errorf("opts.ParseGroupArg: %w", err)
+	}
+	if params == "" {
+		return groupID, nil, nil
 	}
 	return groupID, strings.Split(params, ","), nil
 }
@@ -72,20 +77,26 @@ func ParseTableArgWithScrub(arg string) (TableArg, error) {
 }
 
 // splitTableArg splits a table argument on colons, but respects quoted sections for the filter.
-// Splits at most twice (table, filter, scrub) so colons inside scrub rule params survive:
+// Both double-quoted identifiers and single-quoted SQL string literals are honored, so colons
+// inside them (e.g. a time literal '2024-01-01 12:30:00') do not split the filter. Splits at most
+// twice (table, filter, scrub) so colons inside scrub rule params survive:
 // "schema.table:filter:col=static:foo" → ["schema.table", "filter", "col=static:foo"]
 func splitTableArg(arg string) []string {
 	var parts []string
 	var current strings.Builder
-	inQuotes := false
+	inDouble := false
+	inSingle := false
 
 	for i := 0; i < len(arg); i++ {
 		ch := arg[i]
 		switch {
-		case ch == '"':
-			inQuotes = !inQuotes
+		case ch == '"' && !inSingle:
+			inDouble = !inDouble
 			current.WriteByte(ch)
-		case ch == ':' && !inQuotes && len(parts) < 2:
+		case ch == '\'' && !inDouble:
+			inSingle = !inSingle
+			current.WriteByte(ch)
+		case ch == ':' && !inDouble && !inSingle && len(parts) < 2:
 			parts = append(parts, current.String())
 			current.Reset()
 		default:

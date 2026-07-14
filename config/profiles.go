@@ -24,6 +24,7 @@ type SyncProfile struct {
 	Groups           []string  `json:"groups,omitempty" yaml:"groups,omitempty"`
 	RawTableInput    string    `json:"raw_table_input,omitempty" yaml:"raw_table_input,omitempty"`
 	Truncate         bool      `json:"truncate,omitempty" yaml:"truncate,omitempty"`
+	Cascade          bool      `json:"cascade,omitempty" yaml:"cascade,omitempty"`
 	Preserve         bool      `json:"preserve,omitempty" yaml:"preserve,omitempty"`
 	DeferConstraints bool      `json:"defer_constraints,omitempty" yaml:"defer_constraints,omitempty"`
 	DisableTriggers  bool      `json:"disable_triggers,omitempty" yaml:"disable_triggers,omitempty"`

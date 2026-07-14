@@ -56,6 +56,7 @@ type tableProgress struct {
 
 type syncOptions struct {
 	truncate         bool
+	cascade          bool
 	preserve         bool
 	deferConstraints bool
 	disableTriggers  bool
@@ -232,6 +233,11 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 				Title("Truncate destination tables?").
 				Description("Clears destination tables before syncing. Mutually exclusive with Preserve.").
 				Value(&m.options.truncate),
+			huh.NewConfirm().
+				Key("cascade").
+				Title("Cascade truncate?").
+				Description("TRUNCATE ... CASCADE also empties tables with an FK to the target. Only used when Truncate is on.").
+				Value(&m.options.cascade),
 			huh.NewConfirm().
 				Key("preserve").
 				Title("Preserve existing data?").
@@ -446,6 +452,7 @@ func (m *syncWizardModel) captureForm() {
 		m.rawTableInput = m.form.GetString("tables")
 	case phasePickOptions:
 		m.options.truncate = m.form.GetBool("truncate")
+		m.options.cascade = m.form.GetBool("cascade")
 		m.options.preserve = m.form.GetBool("preserve")
 		m.options.deferConstraints = m.form.GetBool("defer")
 		m.options.disableTriggers = m.form.GetBool("triggers")
@@ -553,7 +560,7 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	}()
 
 	resolver := sync.NewTaskResolver(source, dest, m.syncConfig.Groups,
-		m.options.truncate, m.options.preserve, m.options.deferConstraints, m.options.disableTriggers, nil)
+		m.options.truncate, m.options.cascade, m.options.preserve, m.options.deferConstraints, m.options.disableTriggers, nil)
 	tasks, err := resolver.Resolve(context.Background(), m.selectedGroups, m.buildTableArgs())
 	if err != nil {
 		m.err = err.Error()
@@ -566,7 +573,7 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 
 	// Fetch source row counts sequentially (connection is already open).
 	for i := range m.tasks {
-		count, err := source.GetRowCountFiltered(context.Background(), m.tasks[i].FullName(), m.tasks[i].Filter)
+		count, err := source.GetRowCountFiltered(context.Background(), m.tasks[i].SQLName(), m.tasks[i].Filter)
 		if err == nil {
 			m.tasks[i].SourceRowCount = count
 		}
@@ -864,6 +871,7 @@ func (m syncWizardModel) toProfile(name string) config.SyncProfile {
 		Groups:           m.selectedGroups,
 		RawTableInput:    m.rawTableInput,
 		Truncate:         m.options.truncate,
+		Cascade:          m.options.cascade,
 		Preserve:         m.options.preserve,
 		DeferConstraints: m.options.deferConstraints,
 		DisableTriggers:  m.options.disableTriggers,
@@ -884,6 +892,7 @@ func newSyncWizardModelFromProfile(handler *config.UserConfigHandler, p config.S
 	m.rawTableInput = p.RawTableInput
 	m.options = syncOptions{
 		truncate:         p.Truncate,
+		cascade:          p.Cascade,
 		preserve:         p.Preserve,
 		deferConstraints: p.DeferConstraints,
 		disableTriggers:  p.DisableTriggers,

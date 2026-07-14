@@ -33,6 +33,11 @@ func syncFlags() []cli.Flag {
 			Usage:   "Truncates or deletes all rows from table before syncing. Delete all happens when --defer-constraints is passed.",
 		},
 		&cli.BoolFlag{
+			Name:    "cascade",
+			Aliases: []string{"ca"},
+			Usage:   "Use TRUNCATE ... CASCADE, which also empties tables with a foreign key to the target. Without this, TRUNCATE errors on referenced tables. Only applies to the --truncate path.",
+		},
+		&cli.BoolFlag{
 			Name:    "preserve",
 			Aliases: []string{"p"},
 			Usage:   "Preserve existing tables data. Uses insert on conflict do nothing. Without this flag, an upsert is performed. Ignored if --truncate is passed.",
@@ -100,6 +105,7 @@ func syncFlags() []cli.Flag {
 func cliArgsFromFlags(cCtx *cli.Context) opts.CLIArgs {
 	return opts.CLIArgs{
 		Truncate:         cCtx.Bool("truncate"),
+		Cascade:          cCtx.Bool("cascade"),
 		Preserve:         cCtx.Bool("preserve"),
 		NoSafety:         cCtx.Bool("no-safety"),
 		SkipConfirmation: cCtx.Bool("skip-confirmation"),
@@ -184,7 +190,7 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 		return fmt.Errorf("failed to process --exclude: %w", err)
 	}
 
-	resolver := sync.NewTaskResolver(source, destination, sc.Groups, args.Truncate, args.Preserve, args.DeferConstraints, args.DisableTriggers, excludedTables)
+	resolver := sync.NewTaskResolver(source, destination, sc.Groups, args.Truncate, args.Cascade, args.Preserve, args.DeferConstraints, args.DisableTriggers, excludedTables)
 	tasks, err := resolver.Resolve(cCtx.Context, args.Groups, args.Tables)
 	if err != nil {
 		return err
@@ -279,6 +285,9 @@ func printSyncBanner(sc config.SyncConfig, src, dst *config.ConnectionConfig, ar
 		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", dst.Host, dst.Port, dst.Database)))
 	fmt.Println(bannerArtStyle.Render(bannerMatrix))
 	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Truncate?:"), styledBool(args.Truncate))
+	if args.Truncate {
+		fmt.Printf("%s %s\n", bannerLabelStyle.Render("Cascade?:"), styledBool(args.Cascade))
+	}
 	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Preserve?:"), styledBool(args.Preserve))
 	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Disable Triggers?:"), styledBool(args.DisableTriggers))
 	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Defer Constraints?"), styledBool(args.DeferConstraints))
