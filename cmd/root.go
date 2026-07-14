@@ -42,6 +42,15 @@ func Execute(build string, args []string) {
 	}
 }
 
+// usageError prints the current command's usage/help (to stdout) and returns the
+// formatted error, so a missing/invalid flag shows how to invoke the command rather
+// than just a bare message. ShowSubcommandHelp renders the command's own name, usage,
+// and flags directly from cCtx.Command.
+func usageError(cCtx *cli.Context, format string, a ...any) error {
+	_ = cli.ShowSubcommandHelp(cCtx)
+	return fmt.Errorf(format, a...)
+}
+
 // requireSingleArg returns the command's one positional argument. It errors when
 // anything follows it, because urfave/cli stops flag parsing at the first
 // positional arg and would otherwise silently ignore trailing flags.

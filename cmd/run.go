@@ -129,13 +129,13 @@ func runCmd(handler *config.UserConfigHandler) *cli.Command {
 			destName := cCtx.String("dest")
 
 			if sourceName == "" {
-				return fmt.Errorf("--source is required")
+				return usageError(cCtx, "--source is required")
 			}
 			if destName == "" {
-				return fmt.Errorf("--dest is required")
+				return usageError(cCtx, "--dest is required")
 			}
 			if args.SyncConfigPath == "" {
-				return fmt.Errorf("--config is required")
+				return usageError(cCtx, "--config is required")
 			}
 
 			return executeSync(cCtx, handler, sourceName, destName, args)
