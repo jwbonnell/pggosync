@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"slices"
 	"time"
 
@@ -289,10 +288,17 @@ func (r *ReaderDataSource) GetRowCountFiltered(ctx context.Context, tableName, f
 	return count, nil
 }
 
-// IsLocalHost returns true when the connection URL targets localhost or 127.0.0.1, used for the safety check.
+// loopbackHosts are the destination hostnames the safety check treats as local.
+var loopbackHosts = map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
+
+// IsLocalHost returns true when the connection URL targets a loopback host, used for the safety check.
+// It parses the URL and compares the host exactly, so hosts like "localhost.evil.com" do not pass.
 func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
-	re := regexp.MustCompile(`postgres:\/\/.*:.*@(localhost|127\.0\.0\.1)`)
-	return re.MatchString(r.Url)
+	u, err := url.Parse(r.Url)
+	if err != nil {
+		return false
+	}
+	return loopbackHosts[u.Hostname()]
 }
 
 // GetName returns the datasource label (e.g. "source" or "destination") used in error messages.

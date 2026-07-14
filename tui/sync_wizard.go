@@ -674,6 +674,16 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 		return m, nil
 	}
 
+	// Mirror the CLI safety guard (cmd/run.go): refuse a non-loopback destination unless the
+	// user explicitly disabled safety in the options form.
+	if !m.options.noSafety && !dest.IsLocalHost(context.Background()) {
+		_ = source.DB.Close(context.Background())
+		_ = dest.DB.Close(context.Background())
+		m.syncErr = fmt.Errorf("destination host %q is not localhost or 127.0.0.1 — enable \"Disable safety check?\" to override", dstConn.Host)
+		m.phase = phaseResults
+		return m, nil
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelSync = cancel
 

@@ -28,7 +28,7 @@ type SyncResult struct {
 
 // Sync opens a single destination transaction, pre-fetches source rows into SafeBuffers concurrently (bounded by
 // concurrency), drains each buffer sequentially, and commits. Rolls back on any error or when dryRun is true.
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (SyncResult, error) {
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (res SyncResult, err error) {
 	// logf serializes writes to out so goroutine-originated progress lines don't interleave.
 	var outMu sync.Mutex
 	logf := func(format string, args ...any) {
@@ -91,29 +91,34 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		}
 	}()
 
-	var result SyncResult
-
 	tx, err := dest.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return result, err
+		return res, err
 	}
 
+	// The named return err drives this cleanup: any earlier return that set err (or a
+	// commit failure recorded here) results in a rollback / a surfaced error rather than
+	// a silently-swallowed commit.
 	defer func() {
-		if err != nil {
+		switch {
+		case err != nil:
 			logf("Rolling back... %v\n", err)
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
 				logf("Rollback failed: %v\n", rbErr)
 			}
-		} else if dryRun {
+		case dryRun:
 			if rbErr := tx.Rollback(ctx); rbErr != nil {
 				logf("Rollback failed: %v\n", rbErr)
 			}
-		} else {
+		default:
 			if !quiet {
 				logf("Committing...\n")
 			}
 			if cmErr := tx.Commit(ctx); cmErr != nil {
 				logf("Commit failed: %v\n", cmErr)
+				err = fmt.Errorf("commit failed: %w", cmErr)
+			} else {
+				logf("Sync complete.\n")
 			}
 		}
 	}()
@@ -122,7 +127,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	if deferConstraints {
 		ndc, err = dest.GetNonDeferrableConstraints(ctx)
 		if err != nil {
-			return result, err
+			return res, err
 		}
 
 		if !quiet {
@@ -131,7 +136,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		err = db.DeferConstraints(ctx, tx.Conn(), ndc)
 		if err != nil {
 			logf("DeferConstraints error: %v\n", err)
-			return result, err
+			return res, err
 		}
 	}
 
@@ -139,13 +144,13 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	if disableTriggers {
 		triggers, err = dest.GetUserTriggers(ctx)
 		if err != nil {
-			return result, err
+			return res, err
 		}
 
-		err := db.DisableUserTriggers(ctx, tx.Conn(), triggers)
+		err = db.DisableUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
 			logf("DisableUserTriggers Error: %v\n", err)
-			return result, err
+			return res, err
 		}
 	}
 
@@ -160,7 +165,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 		strategy := taskStrategy(&tasks[i])
 		rowCount, taskErr := ts.SyncFromBuffer(ctx, &tasks[i], bufs[i])
-		result.Tables = append(result.Tables, TableResult{
+		res.Tables = append(res.Tables, TableResult{
 			Table:    tasks[i].FullName(),
 			Rows:     rowCount,
 			Strategy: strategy,
@@ -178,14 +183,14 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	if len(taskErrs) > 0 {
 		err = fmt.Errorf("%d task(s) failed; first error: %w", len(taskErrs), taskErrs[0])
-		return result, err
+		return res, err
 	}
 
 	if disableTriggers {
-		err := db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
+		err = db.RestoreUserTriggers(ctx, tx.Conn(), triggers)
 		if err != nil {
 			logf("RestoreUserTriggers error: %v\n", err)
-			return result, err
+			return res, err
 		}
 	}
 
@@ -196,16 +201,14 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 		err = db.RestoreContraints(ctx, tx.Conn(), ndc)
 		if err != nil {
 			logf("RestoreConstraints error: %v\n", err)
-			return result, err
+			return res, err
 		}
 	}
 
 	if dryRun {
 		logf("Dry run complete — %d table(s) processed, no changes committed.\n", len(tasks))
-	} else {
-		logf("Sync complete.\n")
 	}
-	return result, nil
+	return res, nil
 }
 
 // FormatCount formats an integer with comma separators for human-readable output (e.g. 1,234,567).

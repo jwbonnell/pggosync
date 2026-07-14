@@ -64,9 +64,11 @@ func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableAr
 		sharedTables := table.GetSharedTables(tr.source, tr.destination, tr.excluded)
 		for _, t := range sharedTables {
 			tasks = append(tasks, Task{
-				Table:    t,
-				Filter:   "",
-				Truncate: tr.truncate,
+				Table:            t,
+				Filter:           "",
+				Truncate:         tr.truncate,
+				Preserve:         tr.preserve,
+				DeferConstraints: tr.deferConstraints,
 			})
 		}
 	}
@@ -205,10 +207,12 @@ func (tr *TaskResolver) tableToTasks(tableArgs string, excluded []db.Table) (Tas
 	}
 
 	return Task{
-		Table:      t,
-		Filter:     parsed.Filter,
-		Truncate:   true,
-		ScrubRules: parsed.ScrubRules,
+		Table:            t,
+		Filter:           parsed.Filter,
+		Truncate:         tr.truncate,
+		Preserve:         tr.preserve,
+		DeferConstraints: tr.deferConstraints,
+		ScrubRules:       parsed.ScrubRules,
 	}, nil
 }
 

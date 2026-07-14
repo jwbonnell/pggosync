@@ -74,10 +74,12 @@ func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("description").
 				Title("Description").
 				Description("Human-readable description of this sync config").
 				Value(&m.description),
 			huh.NewText().
+				Key("exclude").
 				Title("Exclude tables").
 				Description("One table per line (schema.table or table). Leave blank to skip.").
 				Value(&m.excludeRaw),
@@ -91,6 +93,7 @@ func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("groupname").
 				Title("Group name").
 				Description("Name for this group of tables").
 				Value(&m.pendingGroupName),
@@ -105,10 +108,12 @@ func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("tablename").
 				Title("Table name").
 				Description("Format: schema.table or table").
 				Value(&m.pendingTableName),
 			huh.NewInput().
+				Key("filter").
 				Title("Filter (optional)").
 				Description("SQL predicate, e.g. country_id = {1}").
 				Value(&m.pendingFilter),
@@ -130,15 +135,18 @@ func (m *syncConfigBuilderModel) buildAddScrubForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("scrubcol").
 				Title("Column to scrub").
 				Description("Column name in this table").
 				Value(&m.pendingScrubColumn),
 			huh.NewSelect[string]().
+				Key("scrubrule").
 				Title("Scrub rule").
 				Description("How to transform the column value").
 				Options(ruleOptions...).
 				Value(&m.pendingScrubRule),
 			huh.NewConfirm().
+				Key("another_scrub").
 				Title("Add another scrub rule to this table?").
 				Value(&m.addAnotherScrub),
 		),
@@ -165,13 +173,16 @@ func (m *syncConfigBuilderModel) buildSaveForm() *huh.Form {
 	return newForm(
 		huh.NewGroup(
 			huh.NewConfirm().
+				Key("another_table").
 				Title("Add another table to this group?").
 				Value(&m.addAnotherTable),
 			huh.NewConfirm().
+				Key("another_group").
 				Title("Add another group?").
 				Description("Only relevant if you chose not to add another table above.").
 				Value(&m.addAnotherGroup),
 			huh.NewInput().
+				Key("savepath").
 				Title("Save path").
 				Description("File path for the generated YAML (e.g. _configs/my-sync.yml)").
 				Placeholder("_configs/my-sync.yml").
@@ -259,8 +270,35 @@ func (m syncConfigBuilderModel) goBack() (syncConfigBuilderModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
+// captureForm copies the just-completed form's values (keyed) into the model's fields for the
+// current phase. huh binds each field via a pointer captured when the form was built, but bubbletea
+// copies the model by value on every Update, so those pointers target a stale copy and the struct
+// fields never receive input. The *huh.Form is a shared pointer, so reading by key is reliable.
+// This mirrors captureForm in sync_wizard.go; see the project_tui_form_capture memory note.
+func (m *syncConfigBuilderModel) captureForm() {
+	switch m.phase {
+	case scPhaseMain:
+		m.description = m.form.GetString("description")
+		m.excludeRaw = m.form.GetString("exclude")
+	case scPhaseAddGroup:
+		m.pendingGroupName = m.form.GetString("groupname")
+	case scPhaseAddTable:
+		m.pendingTableName = m.form.GetString("tablename")
+		m.pendingFilter = m.form.GetString("filter")
+	case scPhaseAddScrub:
+		m.pendingScrubColumn = m.form.GetString("scrubcol")
+		m.pendingScrubRule = m.form.GetString("scrubrule")
+		m.addAnotherScrub = m.form.GetBool("another_scrub")
+	case scPhaseSave:
+		m.addAnotherTable = m.form.GetBool("another_table")
+		m.addAnotherGroup = m.form.GetBool("another_group")
+		m.savePath = m.form.GetString("savepath")
+	}
+}
+
 // advance moves the wizard forward: validates input, appends groups/tables, and transitions to the next phase.
 func (m syncConfigBuilderModel) advance() (syncConfigBuilderModel, tea.Cmd) {
+	m.captureForm()
 	switch m.phase {
 	case scPhaseMain:
 		// Start first group
