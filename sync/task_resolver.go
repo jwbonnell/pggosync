@@ -43,6 +43,12 @@ func NewTaskResolver(source *datasource.ReaderDataSource, destination *datasourc
 // Resolve expands group and table args into a []Task with columns, PKs, and sequences loaded.
 // Falls back to all shared tables when neither groups nor tables are specified.
 func (tr *TaskResolver) Resolve(ctx context.Context, groupArgs []string, tableArgs []string) ([]Task, error) {
+	// Backstop for all callers (CLI and TUI): truncate and preserve are opposing
+	// strategies and must never both apply to a task.
+	if tr.truncate && tr.preserve {
+		return nil, errors.New("truncate and preserve cannot be combined — choose one strategy")
+	}
+
 	var tasks []Task
 
 	for i := range groupArgs {
@@ -186,6 +192,11 @@ func (tr *TaskResolver) groupToTasks(groupArg string) ([]Task, error) {
 		preserve := tr.preserve
 		if entry.Preserve != nil {
 			preserve = *entry.Preserve
+		}
+		// A per-table override combined with a global flag (or two overrides) can leave a
+		// table with both strategies; force the config author to disambiguate explicitly.
+		if truncate && preserve {
+			return nil, fmt.Errorf("group %q table %q: truncate and preserve are both set (via flags or per-table overrides) — they are mutually exclusive; set the per-table override explicitly (e.g. truncate: false) so exactly one applies", groupID, entry.Table)
 		}
 
 		tasks = append(tasks, Task{

@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
+	"github.com/jwbonnell/pggosync/opts"
 	"github.com/jwbonnell/pggosync/sync"
 	"github.com/jwbonnell/pggosync/sync/data"
 )
@@ -90,6 +91,7 @@ type syncWizardModel struct {
 	// Phase 5
 	options        syncOptions
 	concurrencyStr string
+	strategyStr    string // "upsert" | "truncate" | "preserve" — single-select so truncate and preserve can never both be chosen
 
 	// Phase 6 (preview)
 	tasks          []sync.Task
@@ -229,26 +231,33 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 	)
 }
 
-// buildOptionsForm creates the full sync-options form (truncate, preserve, constraints, triggers, concurrency, dry-run, safety).
+// buildOptionsForm creates the full sync-options form (strategy, constraints, triggers, concurrency, dry-run, safety).
+// Strategy is a single select so the mutually exclusive truncate/preserve can never both be chosen.
 func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	m.concurrencyStr = fmt.Sprintf("%d", m.options.concurrency)
+	m.strategyStr = "upsert"
+	if m.options.truncate {
+		m.strategyStr = "truncate"
+	} else if m.options.preserve {
+		m.strategyStr = "preserve"
+	}
 	return newForm(
 		huh.NewGroup(
-			huh.NewConfirm().
-				Key("truncate").
-				Title("Truncate destination tables?").
-				Description("Clears destination tables before syncing. Mutually exclusive with Preserve.").
-				Value(&m.options.truncate),
+			huh.NewSelect[string]().
+				Key("strategy").
+				Title("Sync strategy").
+				Description("How rows are written to the destination.").
+				Options(
+					huh.NewOption("Upsert — update existing rows, insert new ones", "upsert"),
+					huh.NewOption("Truncate — clear destination tables first", "truncate"),
+					huh.NewOption("Preserve — insert new rows only, keep existing", "preserve"),
+				).
+				Value(&m.strategyStr),
 			huh.NewConfirm().
 				Key("cascade").
 				Title("Cascade truncate?").
-				Description("TRUNCATE ... CASCADE also empties tables with an FK to the target. Only used when Truncate is on.").
+				Description("TRUNCATE ... CASCADE also empties tables with an FK to the target. Only used with the Truncate strategy.").
 				Value(&m.options.cascade),
-			huh.NewConfirm().
-				Key("preserve").
-				Title("Preserve existing data?").
-				Description("INSERT ... ON CONFLICT DO NOTHING. Ignored when Truncate is enabled.").
-				Value(&m.options.preserve),
 			huh.NewConfirm().
 				Key("defer").
 				Title("Defer FK constraints?").
@@ -457,9 +466,10 @@ func (m *syncWizardModel) captureForm() {
 		}
 		m.rawTableInput = m.form.GetString("tables")
 	case phasePickOptions:
-		m.options.truncate = m.form.GetBool("truncate")
+		m.strategyStr = m.form.GetString("strategy")
+		m.options.truncate = m.strategyStr == "truncate"
+		m.options.preserve = m.strategyStr == "preserve"
 		m.options.cascade = m.form.GetBool("cascade")
-		m.options.preserve = m.form.GetBool("preserve")
 		m.options.deferConstraints = m.form.GetBool("defer")
 		m.options.disableTriggers = m.form.GetBool("triggers")
 		m.concurrencyStr = m.form.GetString("concurrency")
@@ -538,6 +548,15 @@ func (m syncWizardModel) buildTableArgs() []string {
 
 // buildPreview resolves tasks against both databases and renders a summary viewport for the user to confirm.
 func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
+	// Honor the sync config's exclude list, mirroring executeSync (cmd/run.go).
+	excludedTables, err := opts.ProcessExcludedArgs(m.syncConfig.Exclude)
+	if err != nil {
+		m.err = fmt.Sprintf("invalid exclude entry in sync config: %v", err)
+		m.phase = phasePickSyncFile
+		m.form = m.buildSyncFileForm()
+		return m, m.form.Init()
+	}
+
 	srcConn, err := m.handler.GetConnection(m.selectedSource)
 	if err != nil {
 		m.err = err.Error()
@@ -566,7 +585,7 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 	}()
 
 	resolver := sync.NewTaskResolver(source, dest, m.syncConfig.Groups,
-		m.options.truncate, m.options.cascade, m.options.preserve, m.options.deferConstraints, m.options.disableTriggers, nil)
+		m.options.truncate, m.options.cascade, m.options.preserve, m.options.deferConstraints, m.options.disableTriggers, excludedTables)
 	tasks, err := resolver.Resolve(context.Background(), m.selectedGroups, m.buildTableArgs())
 	if err != nil {
 		m.err = err.Error()

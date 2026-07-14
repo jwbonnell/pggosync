@@ -30,7 +30,7 @@ func syncFlags() []cli.Flag {
 		&cli.BoolFlag{
 			Name:    "truncate",
 			Aliases: []string{"tr"},
-			Usage:   "Truncates or deletes all rows from table before syncing. Delete all happens when --defer-constraints is passed.",
+			Usage:   "Truncates or deletes all rows from table before syncing. Delete all happens when --defer-constraints is passed. Cannot be combined with --preserve.",
 		},
 		&cli.BoolFlag{
 			Name:    "cascade",
@@ -40,7 +40,7 @@ func syncFlags() []cli.Flag {
 		&cli.BoolFlag{
 			Name:    "preserve",
 			Aliases: []string{"p"},
-			Usage:   "Preserve existing tables data. Uses insert on conflict do nothing. Without this flag, an upsert is performed. Ignored if --truncate is passed.",
+			Usage:   "Preserve existing tables data. Uses insert on conflict do nothing. Without this flag, an upsert is performed. Cannot be combined with --truncate.",
 		},
 		&cli.BoolFlag{
 			Name:    "no-safety",
@@ -152,6 +152,12 @@ func runCmd(handler *config.UserConfigHandler) *cli.Command {
 // executeSync resolves connections and tasks, prompts for confirmation, and runs the sync.
 // Shared by `run` and `profile sync`.
 func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceName, destName string, args opts.CLIArgs) error {
+	// Checked here (not per command) so profile-supplied values merged with explicit
+	// flags are covered too. Truncate replaces destination rows, preserve keeps them —
+	// there is no sensible meaning for both.
+	if args.Truncate && args.Preserve {
+		return fmt.Errorf("--truncate and --preserve cannot be combined — choose one strategy (use per-table truncate/preserve overrides in the sync config to mix strategies within a run)")
+	}
 	if args.Concurrency < 1 {
 		args.Concurrency = 1
 	}

@@ -123,6 +123,9 @@ func configCmd(handler *config.UserConfigHandler) *cli.Command {
 					if err != nil {
 						return err
 					}
+					if cCtx.Bool("truncate") && cCtx.Bool("preserve") {
+						return fmt.Errorf("--truncate and --preserve cannot be combined — choose one strategy")
+					}
 					path, err := handler.ResolveSyncConfigPath(nameOrPath)
 					if err != nil {
 						return err
@@ -165,6 +168,9 @@ func validateSyncConfigStructure(sc config.SyncConfig) error {
 		for i, entry := range group.Tables {
 			if entry.Table == "" {
 				problems = append(problems, fmt.Sprintf("group %q table entry %d has no table name", groupName, i+1))
+			}
+			if entry.Truncate != nil && *entry.Truncate && entry.Preserve != nil && *entry.Preserve {
+				problems = append(problems, fmt.Sprintf("group %q table %q sets both truncate and preserve — they are mutually exclusive", groupName, entry.Table))
 			}
 			for _, rule := range entry.Scrub {
 				if rule.Column == "" {

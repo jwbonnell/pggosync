@@ -164,7 +164,10 @@ groups:
         truncate: true    # always truncate this table
       - table: public.lookup
         preserve: true    # always preserve this table
+        truncate: false   # required if the run may pass --truncate globally
 ```
+
+A table must resolve to exactly one strategy: an entry that ends up with both truncate and preserve set (for example, a per-table `preserve: true` combined with a global `--truncate`) is rejected — add an explicit `truncate: false`/`preserve: false` override to disambiguate.
 
 ### Per-table scrub rules
 
@@ -316,6 +319,8 @@ pggosync run --source <name> --dest <name> --config <name-or-path> [flags]
 | **Upsert** (default) | No flags | Stages rows in a temp table, then `INSERT … ON CONFLICT DO UPDATE` on all non-PK columns |
 | **Preserve** | `--preserve` | Same staging, but `ON CONFLICT DO NOTHING` — existing rows are left untouched |
 | **Truncate** | `--truncate` | Clears the destination table first (TRUNCATE or DELETE when `--defer-constraints`), then streams directly via COPY |
+
+`--truncate` and `--preserve` are mutually exclusive — passing both is an error.
 
 Upsert and preserve require a primary key on the destination table. Use `--truncate` for tables without one.
 

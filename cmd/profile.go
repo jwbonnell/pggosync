@@ -91,6 +91,9 @@ func profileCmd(handler *config.UserConfigHandler) *cli.Command {
 					} else if _, err := handler.GetConnection(profile.Dest); err != nil {
 						problems = append(problems, fmt.Sprintf("dest connection: %v", err))
 					}
+					if profile.Truncate && profile.Preserve {
+						problems = append(problems, "truncate and preserve are both set — they are mutually exclusive")
+					}
 					if profile.ConfigFile == "" {
 						problems = append(problems, "config_file is not set")
 					} else if path, err := handler.ResolveSyncConfigPath(profile.ConfigFile); err != nil {

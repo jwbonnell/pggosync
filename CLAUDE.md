@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 pggosync is a CLI tool for syncing data between two PostgreSQL databases. It is inspired by [pgsync](https://github.com/ankane/pgsync) and built as a Go learning exercise.
 
+## Documentation Maintenance
+
+`docs/GUIDE.md` and the sub-guides it links (`docs/guide/commands.md`, `docs/guide/usage.md`, `docs/guide/tui.md`) are the detailed user-facing guide. **With every change, check whether the guide needs updating** — anything touching commands, flags, defaults, config file formats, search/resolution order, sync strategies, scrub rules, safety behavior, or TUI screens/keybindings is documented there and must be updated in the same change.
+
 ## Commands
 
 ```bash
@@ -102,3 +106,7 @@ A `config.SyncProfile` is a named bundle of sync options (source, dest, config f
 ### Safety Check
 
 By default the destination database must resolve to `localhost` or `127.0.0.1`. Pass `--no-safety` to override. The check is enforced in `executeSync` (`cmd/run.go`) before `sync.Sync()` is called.
+
+## Commit Messages
+
+At the end of every code update, generate a brief commit message for the user to copy if they would like. Do not commit automatically — just provide the suggested message.
