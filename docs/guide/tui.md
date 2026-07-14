@@ -41,7 +41,7 @@ Five form steps, then preview → run → results. `Esc` always steps back one s
 
 ### Preview
 
-Submitting the options connects to both databases and fully resolves the plan — the same validation `run` does (tables exist, PKs present, scrub columns valid). You see source/destination details, the effective strategy, and every table with:
+Submitting the options connects to both databases and fully resolves the plan — the same validation `run` does (tables exist, PKs present, scrub columns valid). Resolution (connecting, resolving tables, and running a `COUNT(*)` per table) happens on a **loading screen** with an animated spinner rather than freezing the UI; press `Esc` (or `Ctrl+C`) while it runs to cancel and return to the options. Once it completes you see source/destination details, the effective strategy, and every table with:
 
 - its strategy (`upsert` / `truncate` / `preserve`),
 - how many destination rows will be deleted (truncate tables),

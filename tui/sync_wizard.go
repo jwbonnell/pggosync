@@ -31,6 +31,7 @@ const (
 	phasePickSyncFile
 	phasePickGroupsAndTables
 	phasePickOptions
+	phasePreviewLoading
 	phasePreview
 	phaseRunning
 	phaseResults
@@ -97,6 +98,7 @@ type syncWizardModel struct {
 	tasks          []sync.Task
 	preview        viewport.Model
 	previewContent string
+	cancelPreview  context.CancelFunc
 
 	// Phase 7 (running)
 	tableStates     []tableProgress
@@ -129,6 +131,16 @@ type syncDoneMsg struct {
 	result sync.SyncResult
 }
 
+// previewResultMsg carries the outcome of the async preview resolution back to the Update loop.
+// On success, tasks and content are populated; on failure, err is set and returnPhase names the
+// form phase to return to.
+type previewResultMsg struct {
+	tasks       []sync.Task
+	content     string
+	err         error
+	returnPhase wizardPhase
+}
+
 func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -157,6 +169,12 @@ func (m syncWizardModel) Init() tea.Cmd {
 // to this wizard (which cancels the sync's context) instead of quitting the process outright.
 func (m syncWizardModel) isRunning() bool {
 	return m.phase == phaseRunning
+}
+
+// isPreviewLoading reports whether the async preview is resolving, so the top-level model can route
+// ctrl+c to this wizard (which cancels the preview) instead of quitting the process.
+func (m syncWizardModel) isPreviewLoading() bool {
+	return m.phase == phasePreviewLoading
 }
 
 // ── Form builders ──────────────────────────────────────────────────────────────
@@ -318,6 +336,18 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch m.phase {
+		case phasePreviewLoading:
+			// Cancel the in-flight resolution and drop back to the options form.
+			if msg.String() == "esc" || msg.String() == "ctrl+c" {
+				if m.cancelPreview != nil {
+					m.cancelPreview()
+					m.cancelPreview = nil
+				}
+				m.phase = phasePickOptions
+				m.form = m.buildOptionsForm()
+				return m, m.form.Init()
+			}
+			return m, nil
 		case phasePreview:
 			return m.handlePreviewKey(msg)
 		case phaseResults:
@@ -367,6 +397,45 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 	case syncLineMsg:
 		m.parseSyncLine(strings.TrimRight(string(msg), "\n"))
 		return m, readSyncLine(m.syncReader, m.syncResultCh)
+
+	case previewResultMsg:
+		// Ignore results that arrive after the user cancelled/navigated away — the goroutine
+		// can't be killed, only its context cancelled, so a stale message can still land.
+		if m.phase != phasePreviewLoading {
+			return m, nil
+		}
+		m.cancelPreview = nil
+		if msg.err != nil {
+			if errors.Is(msg.err, context.Canceled) {
+				m.phase = phasePickOptions
+				m.form = m.buildOptionsForm()
+				return m, m.form.Init()
+			}
+			m.err = msg.err.Error()
+			switch msg.returnPhase {
+			case phasePickSource:
+				m.phase = phasePickSource
+				m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
+			case phasePickDest:
+				m.phase = phasePickDest
+				m.form = m.buildPickConnectionForm("Destination connection", "Which database is the sync destination?", &m.selectedDest)
+			case phasePickSyncFile:
+				m.phase = phasePickSyncFile
+				m.form = m.buildSyncFileForm()
+			default:
+				m.phase = phasePickOptions
+				m.form = m.buildOptionsForm()
+			}
+			return m, m.form.Init()
+		}
+		m.tasks = msg.tasks
+		m.err = ""
+		m.previewContent = msg.content
+		vp := viewport.New(m.width-4, m.height-6)
+		vp.SetContent(m.previewContent)
+		m.preview = vp
+		m.phase = phasePreview
+		return m, nil
 
 	case syncDoneMsg:
 		m.syncDone = true
@@ -521,7 +590,7 @@ func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 		if _, err := fmt.Sscanf(m.concurrencyStr, "%d", &m.options.concurrency); err != nil {
 			m.options.concurrency = 1
 		}
-		return m.buildPreview()
+		return m.startPreview()
 
 	case phaseSaveProfile:
 		if err := m.handler.SaveProfile(m.toProfile(m.profileNameInput)); err != nil {
@@ -546,75 +615,86 @@ func (m syncWizardModel) buildTableArgs() []string {
 	return args
 }
 
-// buildPreview resolves tasks against both databases and renders a summary viewport for the user to confirm.
-func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
-	// Honor the sync config's exclude list, mirroring executeSync (cmd/run.go).
-	excludedTables, err := opts.ProcessExcludedArgs(m.syncConfig.Exclude)
-	if err != nil {
-		m.err = fmt.Sprintf("invalid exclude entry in sync config: %v", err)
-		m.phase = phasePickSyncFile
-		m.form = m.buildSyncFileForm()
-		return m, m.form.Init()
-	}
-
-	srcConn, err := m.handler.GetConnection(m.selectedSource)
-	if err != nil {
-		m.err = err.Error()
-		m.phase = phasePickSource
-		m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
-		return m, m.form.Init()
-	}
-	dstConn, err := m.handler.GetConnection(m.selectedDest)
-	if err != nil {
-		m.err = err.Error()
-		m.phase = phasePickDest
-		m.form = m.buildPickConnectionForm("Destination connection", "Which database is the sync destination?", &m.selectedDest)
-		return m, m.form.Init()
-	}
-
-	source, dest, err := setupWizardDatasources(&srcConn, &dstConn)
-	if err != nil {
-		m.err = err.Error()
-		m.phase = phasePickSource
-		m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
-		return m, m.form.Init()
-	}
-	defer func() {
-		_ = source.DB.Close(context.Background())
-		_ = dest.DB.Close(context.Background())
-	}()
-
-	resolver := sync.NewTaskResolver(source, dest, m.syncConfig.Groups,
-		m.options.truncate, m.options.cascade, m.options.preserve, m.options.deferConstraints, m.options.disableTriggers, excludedTables)
-	tasks, err := resolver.Resolve(context.Background(), m.selectedGroups, m.buildTableArgs())
-	if err != nil {
-		m.err = err.Error()
-		m.phase = phasePickOptions
-		m.form = m.buildOptionsForm()
-		return m, m.form.Init()
-	}
-	m.tasks = tasks
+// startPreview switches to the loading phase and kicks off the preview resolution off the event
+// loop. The actual DB work (connecting, resolving tasks, counting rows) runs in previewCmd so the
+// UI stays responsive; the result comes back as a previewResultMsg.
+func (m syncWizardModel) startPreview() (syncWizardModel, tea.Cmd) {
+	m.phase = phasePreviewLoading
 	m.err = ""
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelPreview = cancel
+	return m, tea.Batch(m.spinner.Tick, m.previewCmd(ctx))
+}
 
-	// Fetch source row counts sequentially (connection is already open).
-	for i := range m.tasks {
-		count, err := source.GetRowCountFiltered(context.Background(), m.tasks[i].SQLName(), m.tasks[i].Filter)
-		if err == nil {
-			m.tasks[i].SourceRowCount = count
+// previewCmd resolves tasks against both databases and renders the summary, returning a
+// previewResultMsg. It runs in a goroutine, so it must not mutate the model — everything it needs
+// is captured by value. ctx cancels the resolve/count queries when the user aborts the loading
+// screen.
+func (m syncWizardModel) previewCmd(ctx context.Context) tea.Cmd {
+	return func() tea.Msg {
+		// Honor the sync config's exclude list, mirroring executeSync (cmd/run.go).
+		excludedTables, err := opts.ProcessExcludedArgs(m.syncConfig.Exclude)
+		if err != nil {
+			return previewResultMsg{err: fmt.Errorf("invalid exclude entry in sync config: %w", err), returnPhase: phasePickSyncFile}
 		}
-	}
 
+		srcConn, err := m.handler.GetConnection(m.selectedSource)
+		if err != nil {
+			return previewResultMsg{err: err, returnPhase: phasePickSource}
+		}
+		dstConn, err := m.handler.GetConnection(m.selectedDest)
+		if err != nil {
+			return previewResultMsg{err: err, returnPhase: phasePickDest}
+		}
+
+		source, dest, err := setupWizardDatasources(&srcConn, &dstConn)
+		if err != nil {
+			return previewResultMsg{err: err, returnPhase: phasePickSource}
+		}
+		defer func() {
+			_ = source.DB.Close(context.Background())
+			_ = dest.DB.Close(context.Background())
+		}()
+
+		resolver := sync.NewTaskResolver(source, dest, m.syncConfig.Groups,
+			m.options.truncate, m.options.cascade, m.options.preserve, m.options.deferConstraints, m.options.disableTriggers, excludedTables)
+		tasks, err := resolver.Resolve(ctx, m.selectedGroups, m.buildTableArgs())
+		if err != nil {
+			return previewResultMsg{err: err, returnPhase: phasePickOptions}
+		}
+
+		// Fetch source row counts sequentially (connection is already open). Bail on cancellation
+		// so an aborted loading screen doesn't keep counting large tables.
+		for i := range tasks {
+			count, err := source.GetRowCountFiltered(ctx, tasks[i].SQLName(), tasks[i].Filter)
+			if err != nil {
+				if ctx.Err() != nil {
+					return previewResultMsg{err: ctx.Err(), returnPhase: phasePickOptions}
+				}
+				continue
+			}
+			tasks[i].SourceRowCount = count
+		}
+
+		content := renderPreviewContent(tasks, m.selectedSource, m.selectedDest, srcConn, dstConn, m.syncConfigPath, m.options)
+		return previewResultMsg{tasks: tasks, content: content}
+	}
+}
+
+// renderPreviewContent builds the confirmation summary shown in the preview viewport. Kept pure
+// (no DB access, no model) so it can be unit-tested against a slice of resolved tasks.
+func renderPreviewContent(tasks []sync.Task, srcName, dstName string, srcConn, dstConn config.ConnectionConfig, syncConfigPath string, options syncOptions) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("  Source:      %s  (%s:%d/%s)\n", m.selectedSource, srcConn.Host, srcConn.Port, srcConn.Database))
-	sb.WriteString(fmt.Sprintf("  Destination: %s  (%s:%d/%s)\n", m.selectedDest, dstConn.Host, dstConn.Port, dstConn.Database))
-	sb.WriteString(fmt.Sprintf("  Sync config: %s\n", m.syncConfigPath))
+	sb.WriteString(fmt.Sprintf("  Source:      %s  (%s:%d/%s)\n", srcName, srcConn.Host, srcConn.Port, srcConn.Database))
+	sb.WriteString(fmt.Sprintf("  Destination: %s  (%s:%d/%s)\n", dstName, dstConn.Host, dstConn.Port, dstConn.Database))
+	sb.WriteString(fmt.Sprintf("  Sync config: %s\n", syncConfigPath))
 	sb.WriteString("\n")
-	sb.WriteString(strategyLine(m.options))
-	sb.WriteString(fmt.Sprintf("  Concurrency: %d\n", m.options.concurrency))
-	sb.WriteString(fmt.Sprintf("  Dry run:     %v\n", m.options.dryRun))
+	sb.WriteString(strategyLine(options))
+	sb.WriteString(fmt.Sprintf("  Concurrency: %d\n", options.concurrency))
+	sb.WriteString(fmt.Sprintf("  Dry run:     %v\n", options.dryRun))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  Tables (%d):\n", len(m.tasks)))
-	for _, t := range m.tasks {
+	sb.WriteString(fmt.Sprintf("  Tables (%d):\n", len(tasks)))
+	for _, t := range tasks {
 		strategy := "upsert"
 		if t.Truncate && !t.Preserve {
 			strategy = "truncate"
@@ -640,13 +720,7 @@ func (m syncWizardModel) buildPreview() (syncWizardModel, tea.Cmd) {
 		sb.WriteString(fmt.Sprintf("    %-40s [%s]%s%s%s\n", t.FullName(), strategy, rowInfo, srcInfo, scrubInfo))
 	}
 	sb.WriteString("\n  Press enter to start sync, esc to go back.\n")
-	m.previewContent = sb.String()
-
-	vp := viewport.New(m.width-4, m.height-6)
-	vp.SetContent(m.previewContent)
-	m.preview = vp
-	m.phase = phasePreview
-	return m, nil
+	return sb.String()
 }
 
 // strategyLine formats the active sync strategy flags as a single display line for the preview screen.
@@ -1079,6 +1153,12 @@ func (m syncWizardModel) View() string {
 			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
+
+	case phasePreviewLoading:
+		sb.WriteString(wizardTitleStyle.Render("Run Sync — Preview"))
+		sb.WriteString("\n\n")
+		sb.WriteString(fmt.Sprintf("  %s Resolving tables and counting rows…\n", m.spinner.View()))
+		sb.WriteString("\n  esc to cancel\n")
 
 	case phasePreview:
 		sb.WriteString(wizardTitleStyle.Render("Run Sync — Preview"))

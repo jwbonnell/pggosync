@@ -85,10 +85,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case launchProfileMsg:
 		wiz := newSyncWizardModelFromProfile(m.handler, msg.profile)
-		// Give the wizard the current size before building the preview so its viewport isn't
-		// created with a zero (negative) width/height.
+		// Give the wizard the current size before kicking off the preview so the viewport (built
+		// when the async result lands) isn't created with a zero (negative) width/height.
 		wiz, _ = wiz.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		wiz, cmd := wiz.buildPreview()
+		wiz, cmd := wiz.startPreview()
 		m.syncWizard = wiz
 		m.screen = syncWizardScreen
 		return m, cmd
@@ -127,9 +127,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
-			// If a sync is in flight, let the wizard handle ctrl+c (below) so it cancels the
-			// sync's context cleanly instead of the process being torn down mid-write.
-			if !(m.screen == syncWizardScreen && m.syncWizard.isRunning()) {
+			// If a sync is in flight (or the preview is resolving), let the wizard handle ctrl+c
+			// (below) so it cancels that context cleanly instead of the process being torn down
+			// mid-write / mid-query.
+			busy := m.screen == syncWizardScreen && (m.syncWizard.isRunning() || m.syncWizard.isPreviewLoading())
+			if !busy {
 				return m, tea.Quit
 			}
 		}
