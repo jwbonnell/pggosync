@@ -108,6 +108,10 @@ A `config.SyncProfile` is a named bundle of sync options (source, dest, config f
 
 `--verify` runs `sync.Verify` (`sync/verify.go`) **after** `sync.Sync` commits — it is invoked from `executeSync` (`cmd/run.go`) for the CLI and from the wizard's sync goroutine (`tui/sync_wizard.go`) for the TUI. For each task it re-counts the source with the task filter and the destination whole-table, then compares by strategy: truncate must match exactly, upsert/preserve must have `dest >= source` (the destination keeps rows outside the synced slice). A mismatch is surfaced as a non-zero CLI exit / a red results banner in the TUI; the sync has already committed, so verification cannot roll anything back. It is a **row-count** check only — never a value/checksum comparison, because scrub rules make source and destination values differ by design (and non-deterministic rules would never match). Skipped under `--dry-run`. Threaded through the CLI flag, profiles (`Verify`), and the TUI options like the other flags.
 
+### JSON Output (`--output json`)
+
+`run` and `profile sync` accept `--output json` (`opts.CLIArgs.Output`), which prints a single machine-readable summary (`cmd/jsonoutput.go`, `printJSONSummary`) to **stdout** — per-table strategy/rows/error, the `Verify` results when enabled, `success`, `error`, and `elapsed_ms` — while all human progress (from `sync.Sync`) and verify lines are routed to **stderr** so stdout stays parseable. The summary is emitted even on failure (with `error` set); the process exit code still reflects success. It requires `--skip-confirmation` (the prompt can't share stdout) and is a per-invocation flag — deliberately not stored in profiles and not exposed in the TUI (JSON output is meaningless in an interactive UI).
+
 ### Safety Check
 
 By default the destination database must resolve to `localhost` or `127.0.0.1`. Pass `--no-safety` to override. The check is enforced in `executeSync` (`cmd/run.go`) before `sync.Sync()` is called.

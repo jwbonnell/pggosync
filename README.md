@@ -313,6 +313,7 @@ pggosync run --source <name> --dest <name> --config <name-or-path> [flags]
 | `--concurrency` | `-con` | 1 | Number of source tables to pre-fetch concurrently |
 | `--buffer-size` | `-bs` | 32 | Per-table prefetch buffer cap in MiB (peak memory on the order of concurrency × this, higher in practice) |
 | `--verify` | `-vf` | false | After commit, re-count each table on source and destination; non-zero exit on mismatch (row-count check, not a value/checksum comparison; skipped on `--dry-run`) |
+| `--output` | `-o` | text | Output format: `text` or `json`. `json` prints a machine-readable summary to stdout (progress → stderr) for scripting/CI; requires `--skip-confirmation` |
 
 #### Sync strategies
 

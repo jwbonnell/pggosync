@@ -3,9 +3,11 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/opts"
@@ -109,6 +111,12 @@ func syncFlags() []cli.Flag {
 			Aliases: []string{"vf"},
 			Usage:   "After a successful sync, re-count each table on source and destination and fail if they don't match. Row-count sanity check only — not a value/checksum comparison.",
 		},
+		&cli.StringFlag{
+			Name:    "output",
+			Aliases: []string{"o"},
+			Value:   "text",
+			Usage:   "Output format: text (default) or json. json prints a machine-readable summary on stdout and requires --skip-confirmation; human progress goes to stderr.",
+		},
 	}
 }
 
@@ -123,6 +131,7 @@ func cliArgsFromFlags(cCtx *cli.Context) opts.CLIArgs {
 		Quiet:            cCtx.Bool("quiet"),
 		DryRun:           cCtx.Bool("dry-run"),
 		Verify:           cCtx.Bool("verify"),
+		Output:           cCtx.String("output"),
 		Concurrency:      cCtx.Int("concurrency"),
 		BufferSize:       cCtx.Int("buffer-size"),
 		DeferConstraints: cCtx.Bool("defer-constraints"),
@@ -177,6 +186,18 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 	// Non-positive (including a legacy profile with no buffer_size) falls back to the 32 MiB default.
 	if args.BufferSize < 1 {
 		args.BufferSize = 32
+	}
+	// Validate the output format up front so a bad value or an incompatible mode fails before any
+	// connection is opened. JSON output owns stdout, so the interactive prompt can't coexist with it.
+	switch args.Output {
+	case "", "text":
+		args.Output = "text"
+	case "json":
+		if !args.SkipConfirmation {
+			return fmt.Errorf("--output json requires --skip-confirmation (the interactive confirmation prompt cannot be shown in JSON mode)")
+		}
+	default:
+		return fmt.Errorf("--output must be \"text\" or \"json\" (got %q)", args.Output)
 	}
 	srcConn, dstConn, err := resolveConnections(handler, sourceName, destName)
 	if err != nil {
@@ -270,27 +291,51 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 	proceed:
 	}
 
-	if _, err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, args.BufferSize<<20, tasks, source, destination, os.Stdout); err != nil {
-		return err
+	jsonMode := args.Output == "json"
+	// In JSON mode stdout carries only the machine-readable summary, so route all human-facing
+	// progress (and the post-sync verify lines) to stderr; the JSON is written to stdout below.
+	humanOut := io.Writer(os.Stdout)
+	if jsonMode {
+		humanOut = os.Stderr
 	}
 
-	if args.Verify {
+	start := time.Now()
+	res, syncErr := sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, args.BufferSize<<20, tasks, source, destination, humanOut)
+
+	var vr sync.VerifyResult
+	verified := false
+	if syncErr == nil && args.Verify {
 		if args.DryRun {
 			// A dry run rolls the transaction back, so the destination is unchanged — there is
 			// nothing meaningful to verify against the source slice.
-			fmt.Println("Skipping verification (dry run committed no changes).")
-			return nil
+			if !jsonMode {
+				fmt.Println("Skipping verification (dry run committed no changes).")
+			}
+		} else {
+			if !jsonMode && !args.Quiet {
+				fmt.Println("\nVerifying row counts...")
+			}
+			vr = sync.Verify(cCtx.Context, tasks, source, destination)
+			verified = true
+			if !jsonMode {
+				printVerifyResults(vr)
+			}
 		}
-		if !args.Quiet {
-			fmt.Println("\nVerifying row counts...")
+	}
+
+	if jsonMode {
+		if jErr := printJSONSummary(os.Stdout, sourceName, destName, args, res, syncErr, vr, verified, time.Since(start)); jErr != nil {
+			return fmt.Errorf("could not encode JSON summary: %w", jErr)
 		}
-		vr := sync.Verify(cCtx.Context, tasks, source, destination)
-		printVerifyResults(vr)
-		if !vr.OK() {
-			// The sync already committed; verify runs afterwards, so this cannot roll anything
-			// back. Return an error so scripts and CI see a non-zero exit.
-			return fmt.Errorf("verification failed — the sync committed, but destination row counts do not match the source (see above)")
-		}
+	}
+
+	if syncErr != nil {
+		return syncErr
+	}
+	if verified && !vr.OK() {
+		// The sync already committed; verify runs afterwards, so this cannot roll anything back.
+		// Return an error so scripts and CI see a non-zero exit.
+		return fmt.Errorf("verification failed — the sync committed, but destination row counts do not match the source (see above)")
 	}
 
 	return nil

@@ -90,6 +90,16 @@ pggosync profile sync --skip-confirmation --quiet nightly-staging
 
 `--skip-confirmation` is mandatory for non-interactive use (the prompt would otherwise fail on EOF); `--quiet` keeps logs to failures and the final result. Profile validation (`pggosync profile validate nightly-staging`) makes a good pre-flight step in the same script.
 
+For CI, add `--output json` to capture a machine-readable result:
+
+```bash
+pggosync profile sync --skip-confirmation --output json --verify nightly-staging > result.json
+echo "exit=$?"                      # non-zero if the sync or verification failed
+jq '.success, .tables[].rows' result.json
+```
+
+`--output json` prints one summary object to stdout (per-table rows, the `--verify` outcome, `success`, `elapsed_ms`) and pushes progress to stderr, so redirecting stdout gives you a clean, parseable file. The object is written even on failure (with `error` populated) while the exit code still signals it. It requires `--skip-confirmation`.
+
 ### Rehearse a risky sync
 
 ```bash
@@ -147,6 +157,8 @@ pggosync run -s prod-replica -d staging -c app-slice --truncate --no-safety
 | `--concurrency 0` (or negative) | Clamped to 1. |
 | `--verify` + `--dry-run` | Verification is skipped — a dry run rolls back, so there is nothing committed to check. A note is printed. |
 | `--verify` on an upsert/preserve run | Passes as long as the destination holds **≥** the source row count (it keeps rows outside the synced slice); only truncate tables are checked for an exact match. |
+| `--output json` without `--skip-confirmation` | **Error — refused.** The confirmation prompt can't share stdout with the JSON; add `--skip-confirmation`. |
+| `--output json` + `--quiet` | Fine; `--quiet` only affects the human progress on stderr — the JSON on stdout is unchanged. |
 | Upsert/preserve on a PK-less table | Rejected during resolution with the table names listed; use `--truncate` for those tables (or a per-table `truncate: true` in the config). |
 
 ### Choosing a strategy at a glance

@@ -205,6 +205,21 @@ datasource tests for the new `Truncate` signature and `--cascade`.
   end-to-end against Docker (truncate exact match, upsert `dest >= source`, and a forced
   trigger-suppressed mismatch → non-zero exit).
 
+### `--output json` — machine-readable summary
+- **What:** `run` and `profile sync` accept `--output json` (`cmd/jsonoutput.go`), which prints one
+  summary object to stdout — per-table strategy/rows/error, the `--verify` results, `success`,
+  `error`, `elapsed_ms` — and routes all human progress to stderr so stdout stays parseable. Emitted
+  even on failure (with `error` set); the exit code still reflects success. Requires
+  `--skip-confirmation`; rejects any format other than `text`/`json`.
+- **Why:** Scripts and CI had no structured way to consume a run's outcome — they had to scrape
+  human progress lines. JSON pairs with `--verify` to give a pipeline a single parseable pass/fail
+  artifact.
+- **Scope note:** Deliberately a per-invocation flag — not persisted in profiles and not surfaced in
+  the TUI, where a JSON dump has no meaning.
+- **Tests:** `TestPrintJSONSummary_*` (success+verify, sync error, verify failure); verified
+  end-to-end against Docker (clean stdout under `jq`, stderr-routed progress, non-zero exit on
+  failure, and both input guards).
+
 ## Deferred (by decision)
 
 - **M2 — async TUI preview.** The preview currently opens connections and runs a `COUNT(*)` per table
@@ -214,8 +229,7 @@ datasource tests for the new `Truncate` signature and `--cascade`.
 ## Remaining backlog / feature suggestions
 
 1. Finish schema sync (`sync/schemasync.go` is a stub) — `--schema-only` / DDL diff.
-2. `--output json` — machine-readable per-table summary for scripting/CI.
-3. FK-aware task ordering — topological sort so truncate/insert order is correct without always
+2. FK-aware task ordering — topological sort so truncate/insert order is correct without always
    needing `--defer-constraints`.
-4. Shell completion + `config lint` — validate a sync config against a live schema.
-5. Global `--where` / column include-exclude, and named masking presets (GDPR-style scrub bundles).
+3. Shell completion + `config lint` — validate a sync config against a live schema.
+4. Global `--where` / column include-exclude, and named masking presets (GDPR-style scrub bundles).

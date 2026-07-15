@@ -11,6 +11,7 @@ type CLIArgs struct {
 	Quiet            bool
 	DryRun           bool
 	Verify           bool
+	Output           string // "text" (default) or "json"
 	Concurrency      int
 	BufferSize       int // per-table prefetch buffer cap in MiB
 	SyncConfigPath   string
