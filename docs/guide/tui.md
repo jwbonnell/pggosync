@@ -37,7 +37,7 @@ Five form steps, then preview → run → results. `Esc` always steps back one s
 
 > **Limitation:** the group picker selects groups by name only — there is no way to supply positional params. Parameterised groups (filters containing `{1}`, …) will fail at the preview step with an "unfilled placeholder" error; run those from the CLI with `--group name:params`.
 
-**Step 5 — Options.** A **Sync strategy** selector — Upsert / Truncate / Preserve — makes the strategy a single choice, so the mutually exclusive truncate and preserve can never both be selected. Below it, toggles and pickers mirroring the remaining CLI flags: cascade truncate, defer FK constraints, disable user triggers, concurrency (1/2/4/8), buffer size (8/16/32/64/128 MiB), dry run, and disable safety check. The same semantics and caveats as the flags apply — see the [Command Reference](commands.md#strategy-flags--how-rows-are-written). (A hand-written profile that sets both `truncate` and `preserve` is caught at the preview step and routed back here to pick one.)
+**Step 5 — Options.** A **Sync strategy** selector — Upsert / Truncate / Preserve — makes the strategy a single choice, so the mutually exclusive truncate and preserve can never both be selected. Below it, toggles and pickers mirroring the remaining CLI flags: cascade truncate, defer FK constraints, disable user triggers, concurrency (1/2/4/8), buffer size (8/16/32/64/128 MiB), dry run, verify row counts after sync, and disable safety check. The same semantics and caveats as the flags apply — see the [Command Reference](commands.md#strategy-flags--how-rows-are-written). (A hand-written profile that sets both `truncate` and `preserve` is caught at the preview step and routed back here to pick one.)
 
 ### Preview
 
@@ -68,7 +68,7 @@ A `🔒` badge marks tables with scrub rules. Keys: `j`/`k` move the selection; 
 
 ### Results
 
-A summary header (`Sync complete`, `Dry run complete`, or `Sync failed: …`) with total time, and a per-table breakdown of strategy and rows synced (or the failure). Successful non-dry runs are appended to the sync history. Keys:
+A summary header (`Sync complete`, `Dry run complete`, or `Sync failed: …`) with total time, and a per-table breakdown of strategy and rows synced (or the failure). If **verify row counts** was enabled, a second table follows with a ✓/✗ per table and the source-vs-destination comparison, plus a red banner if any table's counts don't match (the sync still committed — verification runs afterwards). Successful non-dry runs are appended to the sync history. Keys:
 
 - `r` — restart the wizard from step 1
 - `p` — **save as profile**: prompts for a name (pre-filled `source-dest`) and writes the entire wizard configuration to the user profiles dir, ready for `pggosync profile sync <name>` or the Manage Profiles screen

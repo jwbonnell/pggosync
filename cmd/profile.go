@@ -160,6 +160,9 @@ func profileCmd(handler *config.UserConfigHandler) *cli.Command {
 					if !cCtx.IsSet("dry-run") {
 						args.DryRun = profile.DryRun
 					}
+					if !cCtx.IsSet("verify") {
+						args.Verify = profile.Verify
+					}
 					if !cCtx.IsSet("no-safety") {
 						args.NoSafety = profile.NoSafety
 					}

@@ -99,10 +99,14 @@ A `config.SyncProfile` is a named bundle of sync options (source, dest, config f
 | `datasource/` | `ReaderDataSource` (read-only pgx connection) and `ReadWriteDatasource` (embeds reader, adds writes) |
 | `db/` | Pure types (Table, Column, PrimaryKey, etc.) and low-level SQL helpers |
 | `opts/` | Argument parsing for `--group name:params` and `--table schema.table[:filter][:col=rule]` |
-| `sync/` | Task struct, TaskResolver, TableSync, SafeBuffer, and the top-level Sync orchestrator |
+| `sync/` | Task struct, TaskResolver, TableSync, SafeBuffer, the top-level Sync orchestrator, and the post-commit `Verify` row-count check |
 | `sync/table/` | Table filtering (shared tables, exclusion lists) |
 | `sync/data/` | Scrub rule → SQL expression mapping |
 | `tui/` | Interactive terminal UI (Bubble Tea + Huh): sync wizard, connection manager, sync-config builder, profiles |
+
+### Post-Sync Verification
+
+`--verify` runs `sync.Verify` (`sync/verify.go`) **after** `sync.Sync` commits — it is invoked from `executeSync` (`cmd/run.go`) for the CLI and from the wizard's sync goroutine (`tui/sync_wizard.go`) for the TUI. For each task it re-counts the source with the task filter and the destination whole-table, then compares by strategy: truncate must match exactly, upsert/preserve must have `dest >= source` (the destination keeps rows outside the synced slice). A mismatch is surfaced as a non-zero CLI exit / a red results banner in the TUI; the sync has already committed, so verification cannot roll anything back. It is a **row-count** check only — never a value/checksum comparison, because scrub rules make source and destination values differ by design (and non-deterministic rules would never match). Skipped under `--dry-run`. Threaded through the CLI flag, profiles (`Verify`), and the TUI options like the other flags.
 
 ### Safety Check
 

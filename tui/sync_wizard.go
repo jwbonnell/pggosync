@@ -65,6 +65,7 @@ type syncOptions struct {
 	concurrency      int
 	bufferSize       int // per-table prefetch buffer cap in MiB
 	dryRun           bool
+	verify           bool
 	noSafety         bool
 }
 
@@ -112,11 +113,13 @@ type syncWizardModel struct {
 	startTime       time.Time
 	syncReader      *bufio.Reader
 	cancelSync      context.CancelFunc
-	syncResultCh    chan sync.SyncResult
+	syncResultCh    chan syncOutcome
 
 	// Phase 8 (results)
 	elapsed         time.Duration
 	syncResult      sync.SyncResult
+	verifyResult    sync.VerifyResult
+	verified        bool // true when a post-sync verification actually ran
 	savedProfileMsg string
 
 	// Phase 9 (save profile)
@@ -129,8 +132,18 @@ type syncWizardModel struct {
 
 type syncLineMsg string
 type syncDoneMsg struct {
-	err    error
-	result sync.SyncResult
+	err      error
+	result   sync.SyncResult
+	verify   sync.VerifyResult
+	verified bool
+}
+
+// syncOutcome carries everything the sync goroutine produces once it finishes: the per-table sync
+// result and, when verification was requested and the sync committed, the row-count verification.
+type syncOutcome struct {
+	result   sync.SyncResult
+	verify   sync.VerifyResult
+	verified bool
 }
 
 // previewResultMsg carries the outcome of the async preview resolution back to the Update loop.
@@ -319,6 +332,11 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 				Description("Simulate without committing changes.").
 				Value(&m.options.dryRun),
 			huh.NewConfirm().
+				Key("verify").
+				Title("Verify row counts after sync?").
+				Description("Re-count each table on source and destination and flag mismatches.").
+				Value(&m.options.verify),
+			huh.NewConfirm().
 				Key("nosafety").
 				Title("Disable safety check?").
 				Description("Allow syncing to non-localhost destinations.").
@@ -457,6 +475,8 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		m.syncDone = true
 		m.syncErr = msg.err
 		m.syncResult = msg.result
+		m.verifyResult = msg.verify
+		m.verified = msg.verified
 		m.elapsed = time.Since(m.startTime)
 		m.phase = phaseResults
 		if !m.options.dryRun {
@@ -560,6 +580,7 @@ func (m *syncWizardModel) captureForm() {
 		m.concurrencyStr = m.form.GetString("concurrency")
 		m.bufferSizeStr = m.form.GetString("buffersize")
 		m.options.dryRun = m.form.GetBool("dryrun")
+		m.options.verify = m.form.GetBool("verify")
 		m.options.noSafety = m.form.GetBool("nosafety")
 	case phaseSaveProfile:
 		m.profileNameInput = m.form.GetString("profile")
@@ -712,6 +733,7 @@ func renderPreviewContent(tasks []sync.Task, srcName, dstName string, srcConn, d
 	sb.WriteString(strategyLine(options))
 	sb.WriteString(fmt.Sprintf("  Concurrency: %d\n", options.concurrency))
 	sb.WriteString(fmt.Sprintf("  Dry run:     %v\n", options.dryRun))
+	sb.WriteString(fmt.Sprintf("  Verify:      %v\n", options.verify))
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("  Tables (%d):\n", len(tasks)))
 	for _, t := range tasks {
@@ -773,6 +795,8 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	m.startTime = time.Now()
 	m.selectedTableIndex = 0
 	m.showDetailPanel = false
+	m.verified = false
+	m.verifyResult = sync.VerifyResult{}
 
 	m.tableStates = make([]tableProgress, len(m.tasks))
 	m.tableIndex = make(map[string]int, len(m.tasks))
@@ -813,13 +837,15 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelSync = cancel
 
-	resultCh := make(chan sync.SyncResult, 1)
+	resultCh := make(chan syncOutcome, 1)
 	m.syncResultCh = resultCh
 
 	pr, pw := io.Pipe()
 	reader := bufio.NewReader(pr)
 	m.syncReader = reader
 
+	verify := m.options.verify
+	dryRun := m.options.dryRun
 	go func() {
 		defer cancel()
 		defer func() {
@@ -831,7 +857,7 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 			m.options.deferConstraints,
 			m.options.disableTriggers,
 			false,
-			m.options.dryRun,
+			dryRun,
 			m.options.concurrency,
 			m.options.bufferSize<<20,
 			m.tasks,
@@ -839,7 +865,16 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 			dest,
 			pw,
 		)
-		resultCh <- result
+		outcome := syncOutcome{result: result}
+		// Verify only makes sense once the sync has actually committed: skip it on error or dry run.
+		// It runs here (before the deferred connection close) using a background context so it isn't
+		// cancelled by the sync context teardown above.
+		if err == nil && verify && !dryRun {
+			fmt.Fprintln(pw, "Verifying row counts...")
+			outcome.verify = sync.Verify(context.Background(), m.tasks, source, dest)
+			outcome.verified = true
+		}
+		resultCh <- outcome
 		_ = pw.CloseWithError(err)
 	}()
 
@@ -848,15 +883,20 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 
 // readSyncLine returns a Bubble Tea command that reads one line from the sync output pipe and posts it as a syncLineMsg,
 // or posts a syncDoneMsg when the pipe closes.
-func readSyncLine(r *bufio.Reader, resultCh <-chan sync.SyncResult) tea.Cmd {
+func readSyncLine(r *bufio.Reader, resultCh <-chan syncOutcome) tea.Cmd {
 	return func() tea.Msg {
 		line, err := r.ReadString('\n')
 		if len(line) > 0 {
 			return syncLineMsg(line)
 		}
 		if err != nil {
-			result := <-resultCh
-			return syncDoneMsg{err: unwrapPipeErr(err), result: result}
+			outcome := <-resultCh
+			return syncDoneMsg{
+				err:      unwrapPipeErr(err),
+				result:   outcome.result,
+				verify:   outcome.verify,
+				verified: outcome.verified,
+			}
 		}
 		return readSyncLine(r, resultCh)()
 	}
@@ -998,6 +1038,7 @@ func (m syncWizardModel) toProfile(name string) config.SyncProfile {
 		Concurrency:      m.options.concurrency,
 		BufferSize:       m.options.bufferSize,
 		DryRun:           m.options.dryRun,
+		Verify:           m.options.verify,
 		NoSafety:         m.options.noSafety,
 		CreatedAt:        time.Now(),
 	}
@@ -1020,6 +1061,7 @@ func newSyncWizardModelFromProfile(handler *config.UserConfigHandler, p config.S
 		concurrency:      p.Concurrency,
 		bufferSize:       p.BufferSize,
 		dryRun:           p.DryRun,
+		verify:           p.Verify,
 		noSafety:         p.NoSafety,
 	}
 	// Legacy profiles saved before --buffer-size have 0 here; fall back to the 32 MiB default so the
@@ -1356,6 +1398,29 @@ func (m syncWizardModel) View() string {
 				}
 			}
 			sb.WriteString(borderStyle.Render(stats.String()))
+		}
+		if m.verified && len(m.verifyResult.Tables) > 0 {
+			var vs strings.Builder
+			vs.WriteString(fmt.Sprintf("  %-40s  %s\n", "Verify", "Result"))
+			vs.WriteString(fmt.Sprintf("  %-40s  %s\n", strings.Repeat("─", 40), strings.Repeat("─", 10)))
+			for _, tv := range m.verifyResult.Tables {
+				// Keep the styled mark in the trailing column so ANSI codes never throw off the
+				// fixed-width table-name column.
+				mark := successStyle.Render("✓")
+				detail := tv.Detail
+				if tv.Err != nil {
+					mark = errorStyle.Render("✗")
+					detail = "ERROR: " + tv.Err.Error()
+				} else if !tv.OK {
+					mark = errorStyle.Render("✗")
+				}
+				vs.WriteString(fmt.Sprintf("  %-40s  %s %s\n", tv.Table, mark, detail))
+			}
+			sb.WriteString("\n")
+			sb.WriteString(borderStyle.Render(vs.String()))
+			if !m.verifyResult.OK() {
+				sb.WriteString("\n" + errorStyle.Render("Verification failed — destination row counts do not match the source."))
+			}
 		}
 		if m.savedProfileMsg != "" {
 			sb.WriteString(successStyle.Render(m.savedProfileMsg) + "\n")

@@ -10,6 +10,7 @@ type CLIArgs struct {
 	SkipConfirmation bool
 	Quiet            bool
 	DryRun           bool
+	Verify           bool
 	Concurrency      int
 	BufferSize       int // per-table prefetch buffer cap in MiB
 	SyncConfigPath   string

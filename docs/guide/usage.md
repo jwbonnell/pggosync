@@ -107,6 +107,20 @@ pggosync run -s src -d dest -c app-slice --truncate --defer-constraints \
 
 `--concurrency 4` prefetches up to four source tables in parallel while the destination writes sequentially, hiding source round-trip latency. Diminishing returns past the point where prefetch outpaces the write loop. Each prefetch streams into a bounded buffer (`--buffer-size`, default 32 MiB) that applies backpressure when full, so peak memory stays bounded on the order of `concurrency × --buffer-size` (real RSS runs several times higher) — raising concurrency raises the memory ceiling proportionally, but it never grows with table size.
 
+### Confirm the sync landed every row
+
+```bash
+pggosync run -s prod-replica -d local -c app-slice --truncate --defer-constraints \
+  --verify --skip-confirmation
+```
+
+`--verify` re-counts each table on both databases *after the commit* and exits non-zero on a
+mismatch — a cheap post-flight check for scripts and CI. Truncate tables must match the source
+exactly; upsert/preserve tables must hold at least as many rows on the destination (they keep rows
+outside the synced slice). It is a **row-count** check only: it deliberately does not compare column
+values, because scrubbed columns differ between source and destination by design. It is skipped
+under `--dry-run` (nothing is committed to check).
+
 ### Refresh a shared (remote) staging database
 
 ```bash
@@ -131,6 +145,8 @@ pggosync run -s prod-replica -d staging -c app-slice --truncate --no-safety
 | `--exclude` vs `--group` | Exclusions do **not** currently filter tables listed inside a selected group — a group syncs all of its tables. Exclusions apply to the "all shared tables" default scope and to explicit `--table` args. |
 | `--quiet` without `--skip-confirmation` | Fine interactively, but note `--quiet` doesn't suppress the confirmation prompt — scripts need `--skip-confirmation` regardless. |
 | `--concurrency 0` (or negative) | Clamped to 1. |
+| `--verify` + `--dry-run` | Verification is skipped — a dry run rolls back, so there is nothing committed to check. A note is printed. |
+| `--verify` on an upsert/preserve run | Passes as long as the destination holds **≥** the source row count (it keeps rows outside the synced slice); only truncate tables are checked for an exact match. |
 | Upsert/preserve on a PK-less table | Rejected during resolution with the table names listed; use `--truncate` for those tables (or a per-table `truncate: true` in the config). |
 
 ### Choosing a strategy at a glance

@@ -12,6 +12,7 @@ var (
 	cliSubtle = lipgloss.AdaptiveColor{Light: "#3F6B50", Dark: "#57B36E"} // labels
 	cliMuted  = lipgloss.AdaptiveColor{Light: "#5B8C6E", Dark: "#2F7A45"} // dim / false values
 	cliText   = lipgloss.AdaptiveColor{Light: "#14331F", Dark: "#C8FFD4"} // body text
+	cliRed    = lipgloss.AdaptiveColor{Light: "#B00020", Dark: "#FF5555"} // failures / mismatches
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 	bannerTextStyle  = lipgloss.NewStyle().Foreground(cliText)
 	bannerOnStyle    = lipgloss.NewStyle().Foreground(cliGreen).Bold(true)
 	bannerOffStyle   = lipgloss.NewStyle().Foreground(cliMuted)
+	bannerFailStyle  = lipgloss.NewStyle().Foreground(cliRed).Bold(true)
 )
 
 // styledBool renders a boolean in the matrix palette: bright green when true, dim when false.

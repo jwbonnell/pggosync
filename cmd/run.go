@@ -104,6 +104,11 @@ func syncFlags() []cli.Flag {
 			Value:   32,
 			Usage:   "Per-table prefetch buffer cap in MiB (peak memory ≈ concurrency × this).",
 		},
+		&cli.BoolFlag{
+			Name:    "verify",
+			Aliases: []string{"vf"},
+			Usage:   "After a successful sync, re-count each table on source and destination and fail if they don't match. Row-count sanity check only — not a value/checksum comparison.",
+		},
 	}
 }
 
@@ -117,6 +122,7 @@ func cliArgsFromFlags(cCtx *cli.Context) opts.CLIArgs {
 		SkipConfirmation: cCtx.Bool("skip-confirmation"),
 		Quiet:            cCtx.Bool("quiet"),
 		DryRun:           cCtx.Bool("dry-run"),
+		Verify:           cCtx.Bool("verify"),
 		Concurrency:      cCtx.Int("concurrency"),
 		BufferSize:       cCtx.Int("buffer-size"),
 		DeferConstraints: cCtx.Bool("defer-constraints"),
@@ -268,7 +274,45 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 		return err
 	}
 
+	if args.Verify {
+		if args.DryRun {
+			// A dry run rolls the transaction back, so the destination is unchanged — there is
+			// nothing meaningful to verify against the source slice.
+			fmt.Println("Skipping verification (dry run committed no changes).")
+			return nil
+		}
+		if !args.Quiet {
+			fmt.Println("\nVerifying row counts...")
+		}
+		vr := sync.Verify(cCtx.Context, tasks, source, destination)
+		printVerifyResults(vr)
+		if !vr.OK() {
+			// The sync already committed; verify runs afterwards, so this cannot roll anything
+			// back. Return an error so scripts and CI see a non-zero exit.
+			return fmt.Errorf("verification failed — the sync committed, but destination row counts do not match the source (see above)")
+		}
+	}
+
 	return nil
+}
+
+// printVerifyResults renders the post-sync row-count verification table in the matrix palette.
+func printVerifyResults(vr sync.VerifyResult) {
+	for _, tv := range vr.Tables {
+		var status, detail string
+		switch {
+		case tv.Err != nil:
+			status = bannerFailStyle.Render("ERROR")
+			detail = tv.Err.Error()
+		case tv.OK:
+			status = bannerOnStyle.Render("OK")
+			detail = tv.Detail
+		default:
+			status = bannerFailStyle.Render("FAIL")
+			detail = tv.Detail
+		}
+		fmt.Printf("  %-40s [%s] %s\n", tv.Table, status, detail)
+	}
 }
 
 // bannerLogo and bannerMatrix hold the ASCII art for the confirmation banner. They are

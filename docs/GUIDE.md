@@ -143,6 +143,7 @@ Understanding the execution model explains most flag behavior:
 4. **Two write strategies.** *Truncate*: clear the table (`TRUNCATE`, or `DELETE FROM` under `--defer-constraints`) then `COPY` straight in. *Upsert/preserve* (default): `COPY` into a temp table, then `INSERT … ON CONFLICT DO UPDATE` (or `DO NOTHING` with `--preserve`) — this is why a destination primary key is required.
 5. **Sequences follow.** After each table, sequences owned by it are set to the source's values, so inserts on the destination don't collide after the sync.
 6. **Safety check.** Before any of this, the destination host must be `localhost` or `127.0.0.1` unless `--no-safety` is passed. The check compares the URL host exactly, so `localhost.evil.com` does not pass. This exists because the tool's whole premise is *pulling data down* — a fat-fingered direction swap should not be able to write into a shared database.
+7. **Optional verification.** With `--verify`, after the commit each table is re-counted on both databases: truncate tables must match the source exactly, upsert/preserve tables must hold at least as many rows on the destination. A mismatch exits non-zero. It is a row-count sanity check, not a value comparison — scrub rules make source and destination values differ by design — and is skipped on a dry run.
 
 ---
 

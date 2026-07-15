@@ -186,6 +186,25 @@ datasource tests for the new `Truncate` signature and `--cascade`.
   got a slot.
 - **Tests:** `TestSafeBuffer_Bounded`, `TestSafeBuffer_CloseUnblocksWriter` (run under `-race`).
 
+### `--verify` — post-sync row-count check
+- **What:** New `sync.Verify` (`sync/verify.go`) runs after `Sync` commits and re-counts each table on
+  both databases: truncate tables must match the source exactly, upsert/preserve tables must hold
+  `dest >= source` (the destination keeps rows outside the synced slice). A mismatch is a non-zero
+  CLI exit (and a red banner on the TUI results screen). Skipped on `--dry-run`. Exposed as `--verify`
+  and wired through the CLI, profiles (`Verify`), and the TUI options + results, matching the other
+  flags.
+- **Why:** Nothing confirmed the sync actually landed every row; a silently short COPY, an
+  interfering destination trigger, or a filter mistake would commit and report success. `--verify`
+  gives scripts and CI a cheap post-flight assertion.
+- **Scope note:** It is deliberately a *row-count* check, not a value/checksum comparison — scrub
+  rules make source and destination values differ by design, and non-deterministic rules (random_*)
+  would never match, so counts are the only meaningful cross-database invariant. Because it re-queries
+  the live source, concurrent writes there can cause a spurious truncate mismatch (best-effort, not a
+  transactional guarantee).
+- **Tests:** `TestVerifyVerdict` (strategy-aware comparison), `TestVerifyResultOK`; verified
+  end-to-end against Docker (truncate exact match, upsert `dest >= source`, and a forced
+  trigger-suppressed mismatch → non-zero exit).
+
 ## Deferred (by decision)
 
 - **M2 — async TUI preview.** The preview currently opens connections and runs a `COUNT(*)` per table
@@ -194,10 +213,9 @@ datasource tests for the new `Truncate` signature and `--cascade`.
 
 ## Remaining backlog / feature suggestions
 
-1. Post-sync verification (`--verify`) — source-vs-dest row-count/checksum check.
-2. Finish schema sync (`sync/schemasync.go` is a stub) — `--schema-only` / DDL diff.
-3. `--output json` — machine-readable per-table summary for scripting/CI.
-4. FK-aware task ordering — topological sort so truncate/insert order is correct without always
+1. Finish schema sync (`sync/schemasync.go` is a stub) — `--schema-only` / DDL diff.
+2. `--output json` — machine-readable per-table summary for scripting/CI.
+3. FK-aware task ordering — topological sort so truncate/insert order is correct without always
    needing `--defer-constraints`.
-5. Shell completion + `config lint` — validate a sync config against a live schema.
-6. Global `--where` / column include-exclude, and named masking presets (GDPR-style scrub bundles).
+4. Shell completion + `config lint` — validate a sync config against a live schema.
+5. Global `--where` / column include-exclude, and named masking presets (GDPR-style scrub bundles).
