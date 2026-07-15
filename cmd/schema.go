@@ -90,15 +90,16 @@ func executeSchemaSync(cCtx *cli.Context, handler *config.UserConfigHandler) err
 		return fmt.Errorf("could not resolve connections: %w", err)
 	}
 
+	// Safety check before opening any connection (fail fast + testable without a live remote host).
+	if !noSafety && !datasource.IsLoopbackHost(dstConn.Host) {
+		return fmt.Errorf("destination host %q is not localhost or 127.0.0.1 — pass --no-safety to override", dstConn.Host)
+	}
+
 	source, destination := setupDatasources(&srcConn, &dstConn)
 	defer func() {
 		_ = source.DB.Close(cCtx.Context)
 		_ = destination.DB.Close(cCtx.Context)
 	}()
-
-	if !noSafety && !destination.IsLocalHost(cCtx.Context) {
-		return fmt.Errorf("destination host %q is not localhost or 127.0.0.1 — pass --no-safety to override", dstConn.Host)
-	}
 
 	if !cCtx.Bool("skip-confirmation") {
 		reader := bufio.NewReader(os.Stdin)

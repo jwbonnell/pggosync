@@ -122,7 +122,7 @@ The command lives in `cmd/schema.go` (`schema` group → `sync` subcommand). It 
 
 ### Safety Check
 
-By default the destination database must resolve to `localhost` or `127.0.0.1`. Pass `--no-safety` to override. The check is enforced in `executeSync` (`cmd/run.go`) before `sync.Sync()` is called.
+By default the destination database must resolve to `localhost` or `127.0.0.1`. Pass `--no-safety` to override. The check is enforced in `executeSync` (`cmd/run.go`) and `executeSchemaSync` (`cmd/schema.go`) via `datasource.IsLoopbackHost`, **before any connection is opened** — a non-loopback destination fails fast without a wasted connection attempt. `cmd.Execute` returns its error to `main` (which prints it and sets the exit code) rather than calling `os.Exit` itself, so these command error paths are testable (see `cmd/tests/cli_errors_test.go`).
 
 ## Commit Messages
 

@@ -70,11 +70,23 @@ func TestSchemaSync_CreatesMissingTable(t *testing.T) {
 
 	require.False(t, tableExists(t, ctx, dst, "public", probe), "precondition: probe must not exist on dest yet")
 
+	// A sentinel row in an existing dest table — the default (no --clean) path must leave existing
+	// objects and their data untouched, only creating what's missing.
+	_, err = dst.Exec(ctx, "INSERT INTO country (country_id, country_name) VALUES (9911, 'schema sentinel') ON CONFLICT (country_id) DO UPDATE SET country_name = EXCLUDED.country_name")
+	require.NoError(t, err)
+	defer func() { _, _ = dst.Exec(ctx, "DELETE FROM country WHERE country_id = 9911") }()
+
 	args := os.Args[0:1]
 	args = append(args, "schema", "sync", "--source", "source", "--dest", "dest", "--skip-confirmation")
 	cmd.Execute("test", args)
 
 	assert.True(t, tableExists(t, ctx, dst, "public", probe), "schema sync should have created the probe table on dest")
+
+	// The existing table's data must survive — the default path does not drop/recreate.
+	var name string
+	err = dst.QueryRow(ctx, "SELECT country_name FROM country WHERE country_id = 9911").Scan(&name)
+	require.NoError(t, err, "existing dest data must remain after a default schema sync")
+	assert.Equal(t, "schema sentinel", name)
 }
 
 // TestSchemaSync_DryRun verifies a dry run applies nothing to the destination.

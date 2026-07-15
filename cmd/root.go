@@ -12,9 +12,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// Execute builds the CLI app and runs it; a bare invocation launches the TUI,
-// unrecognized subcommands are an error.
-func Execute(build string, args []string) {
+// Execute builds the CLI app and runs it, returning any error to the caller (main handles printing
+// and the exit code). Returning rather than exiting here keeps command error paths testable. A bare
+// invocation launches the TUI; unrecognized subcommands are an error.
+func Execute(build string, args []string) error {
 	handler := config.UserConfigHandler{
 		PathHandler: config.OSPathHandler{},
 	}
@@ -37,10 +38,7 @@ func Execute(build string, args []string) {
 		},
 	}
 
-	if err := app.Run(args); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
-	}
+	return app.Run(args)
 }
 
 // usageError prints the current command's usage/help (to stderr, alongside the error) and returns

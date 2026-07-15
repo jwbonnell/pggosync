@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/jwbonnell/pggosync/cmd"
@@ -9,5 +10,8 @@ import (
 var build = "development"
 
 func main() {
-	cmd.Execute(build, os.Args)
+	if err := cmd.Execute(build, os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
 }

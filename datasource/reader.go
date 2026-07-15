@@ -295,6 +295,13 @@ func (r *ReaderDataSource) GetRowCountFiltered(ctx context.Context, tableName, f
 // loopbackHosts are the destination hostnames the safety check treats as local.
 var loopbackHosts = map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
 
+// IsLoopbackHost reports whether host is one the destination safety check treats as local. It
+// compares the host exactly, so names like "localhost.evil.com" do not pass. Exported so the safety
+// check can run against a connection config's host before any connection is opened.
+func IsLoopbackHost(host string) bool {
+	return loopbackHosts[host]
+}
+
 // IsLocalHost returns true when the connection URL targets a loopback host, used for the safety check.
 // It parses the URL and compares the host exactly, so hosts like "localhost.evil.com" do not pass.
 func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
@@ -302,7 +309,7 @@ func (r *ReaderDataSource) IsLocalHost(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	return loopbackHosts[u.Hostname()]
+	return IsLoopbackHost(u.Hostname())
 }
 
 // GetName returns the datasource label (e.g. "source" or "destination") used in error messages.

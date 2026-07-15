@@ -1,8 +1,15 @@
 package sync
 
 import (
+	"context"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestPGDumpArgs(t *testing.T) {
@@ -56,5 +63,45 @@ func TestPGEnv(t *testing.T) {
 	p.SSLMode = "require"
 	if !slices.Contains(p.pgEnv(), "PGSSLMODE=require") {
 		t.Errorf("pgEnv() missing PGSSLMODE=require when SSLMode set")
+	}
+}
+
+// TestSchemaSync_MissingBinaries verifies SchemaSync fails fast with a clear message when the
+// PostgreSQL client tools it shells out to are not on PATH, rather than attempting to run anything.
+func TestSchemaSync_MissingBinaries(t *testing.T) {
+	// Empty PATH — pg_dump can't be found. DryRun so only pg_dump is required.
+	t.Setenv("PATH", "")
+	err := SchemaSync(context.Background(), SchemaSyncParams{}, SchemaSyncParams{}, SchemaSyncOptions{DryRun: true}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "pg_dump not found on PATH") {
+		t.Fatalf("empty PATH: want pg_dump-not-found error, got %v", err)
+	}
+
+	// pg_dump present but psql absent — the apply path must report psql missing. The fake pg_dump is
+	// never executed (the psql lookup fails first), so its contents don't matter.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pg_dump"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("writing fake pg_dump: %v", err)
+	}
+	t.Setenv("PATH", dir)
+	err = SchemaSync(context.Background(), SchemaSyncParams{}, SchemaSyncParams{}, SchemaSyncOptions{}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "psql not found on PATH") {
+		t.Fatalf("pg_dump-only PATH: want psql-not-found error, got %v", err)
+	}
+}
+
+// TestSchemaSync_DumpFailureSurfaced verifies a pg_dump failure (here, an unreachable source) is
+// surfaced as an error rather than swallowed. Requires the pg_dump binary; skipped otherwise.
+func TestSchemaSync_DumpFailureSurfaced(t *testing.T) {
+	if _, err := exec.LookPath("pg_dump"); err != nil {
+		t.Skip("pg_dump not on PATH")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Nothing listens on 127.0.0.1:1, so pg_dump fails fast. DryRun so no psql is involved.
+	bad := SchemaSyncParams{Host: "127.0.0.1", Port: 1, User: "x", Password: "x", Database: "x"}
+	err := SchemaSync(ctx, bad, SchemaSyncParams{}, SchemaSyncOptions{DryRun: true}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "pg_dump failed") {
+		t.Fatalf("want pg_dump failure error, got %v", err)
 	}
 }

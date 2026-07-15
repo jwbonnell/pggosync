@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jwbonnell/pggosync/config"
+	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/opts"
 	"github.com/jwbonnell/pggosync/sync"
 	"github.com/jwbonnell/pggosync/sync/data"
@@ -204,6 +205,12 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 		return fmt.Errorf("could not resolve connections: %w", err)
 	}
 
+	// Safety check before opening any connection: refuse a non-loopback destination unless
+	// overridden, so we fail fast (and testably) without a wasted connection attempt.
+	if !args.NoSafety && !datasource.IsLoopbackHost(dstConn.Host) {
+		return fmt.Errorf("destination host %q is not localhost or 127.0.0.1 — pass --no-safety to override", dstConn.Host)
+	}
+
 	configPath, err := handler.ResolveSyncConfigPath(args.SyncConfigPath)
 	if err != nil {
 		return fmt.Errorf("could not resolve sync config: %w", err)
@@ -218,10 +225,6 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 		_ = source.DB.Close(cCtx.Context)
 		_ = destination.DB.Close(cCtx.Context)
 	}()
-
-	if !args.NoSafety && !destination.IsLocalHost(cCtx.Context) {
-		return fmt.Errorf("destination host %q is not localhost or 127.0.0.1 — pass --no-safety to override", dstConn.Host)
-	}
 
 	var excluded []string
 	if len(sc.Exclude) > 0 {
