@@ -33,6 +33,7 @@ func Execute(build string, args []string) {
 			connCmd(&handler),
 			profileCmd(&handler),
 			configCmd(&handler),
+			schemaCmd(&handler),
 		},
 	}
 

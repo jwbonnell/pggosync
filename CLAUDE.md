@@ -88,18 +88,18 @@ Scrub rules anonymise column values during a sync. A rule ID (`hash`, `redact`, 
 
 ### Profiles
 
-A `config.SyncProfile` is a named bundle of sync options (source, dest, config file, groups, flags) stored as one YAML file per profile; the name comes from the filename stem. Profiles are resolved by name or path against `./.pggosync/profiles/` then `$XDG_CONFIG_DIR/pggosync/profiles/` (the TUI saves to the latter; a legacy `profiles.json` is auto-migrated on first load). `pggosync profile sync <name>` loads one as defaults, filling only fields the user did not set explicitly (`cCtx.IsSet` guards in `cmd/profile.go`), then delegates to `executeSync` in `cmd/run.go`. Note: schema sync (`sync/schemasync.go`) is an unfinished stub and is not wired into any command.
+A `config.SyncProfile` is a named bundle of sync options (source, dest, config file, groups, flags) stored as one YAML file per profile; the name comes from the filename stem. Profiles are resolved by name or path against `./.pggosync/profiles/` then `$XDG_CONFIG_DIR/pggosync/profiles/` (the TUI saves to the latter; a legacy `profiles.json` is auto-migrated on first load). `pggosync profile sync <name>` loads one as defaults, filling only fields the user did not set explicitly (`cCtx.IsSet` guards in `cmd/profile.go`), then delegates to `executeSync` in `cmd/run.go`. Profiles carry data-sync options only; schema sync (below) is a separate CLI-only command and is not part of a profile.
 
 ### Package Responsibilities
 
 | Package | Responsibility |
 |---|---|
-| `cmd/` | CLI command definitions using `urfave/cli/v2` (`run`, `tables`, `conn`, `profile`, `config`, `version`; no subcommand launches the TUI, unknown subcommands error) |
+| `cmd/` | CLI command definitions using `urfave/cli/v2` (`run`, `tables`, `conn`, `profile`, `config`, `schema`, `version`; no subcommand launches the TUI, unknown subcommands error) |
 | `config/` | User config (credentials), sync config (groups/filters/scrub), name-or-path resolution, per-file YAML profiles, and sync history |
 | `datasource/` | `ReaderDataSource` (read-only pgx connection) and `ReadWriteDatasource` (embeds reader, adds writes) |
 | `db/` | Pure types (Table, Column, PrimaryKey, etc.) and low-level SQL helpers |
 | `opts/` | Argument parsing for `--group name:params` and `--table schema.table[:filter][:col=rule]` |
-| `sync/` | Task struct, TaskResolver, TableSync, SafeBuffer, the top-level Sync orchestrator, and the post-commit `Verify` row-count check |
+| `sync/` | Task struct, TaskResolver, TableSync, SafeBuffer, the top-level Sync orchestrator, the post-commit `Verify` row-count check, and `SchemaSync` (schema-only DDL copy) |
 | `sync/table/` | Table filtering (shared tables, exclusion lists) |
 | `sync/data/` | Scrub rule → SQL expression mapping |
 | `tui/` | Interactive terminal UI (Bubble Tea + Huh): sync wizard, connection manager, sync-config builder, profiles |
@@ -107,6 +107,14 @@ A `config.SyncProfile` is a named bundle of sync options (source, dest, config f
 ### Post-Sync Verification
 
 `--verify` runs `sync.Verify` (`sync/verify.go`) **after** `sync.Sync` commits — it is invoked from `executeSync` (`cmd/run.go`) for the CLI and from the wizard's sync goroutine (`tui/sync_wizard.go`) for the TUI. For each task it re-counts the source with the task filter and the destination whole-table, then compares by strategy: truncate must match exactly, upsert/preserve must have `dest >= source` (the destination keeps rows outside the synced slice). A mismatch is surfaced as a non-zero CLI exit / a red results banner in the TUI; the sync has already committed, so verification cannot roll anything back. It is a **row-count** check only — never a value/checksum comparison, because scrub rules make source and destination values differ by design (and non-deterministic rules would never match). Skipped under `--dry-run`. Threaded through the CLI flag, profiles (`Verify`), and the TUI options like the other flags.
+
+### Schema Sync (`pggosync schema sync`)
+
+`sync.SchemaSync` (`sync/schemasync.go`) copies the **whole database schema** (DDL) from source to destination by shelling out to **`pg_dump --schema-only --no-owner --no-acl`** piped to **`psql`** (both must be on `PATH`; checked via `exec.LookPath`). Connection credentials are passed to the child processes as **libpq environment variables** (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`) via `SchemaSyncParams.pgEnv`, so the password never lands in `argv`. The pipeline uses a raw `os.Pipe` between the two `exec.Cmd`s.
+
+Two behaviours (`SchemaSyncOptions`): the default creates objects missing on the destination and leaves existing ones untouched — `psql` runs without `ON_ERROR_STOP`, so "already exists" errors are non-fatal and it still exits 0 (it does **not** reconcile a drifted table missing a source column). `Clean` adds `pg_dump --clean --if-exists` to drop & recreate every object (destructive). `DryRun` runs `pg_dump` alone and writes the DDL to `out`, applying nothing.
+
+The command lives in `cmd/schema.go` (`schema` group → `sync` subcommand). It is data-agnostic — no groups/`--table`/scrub — reuses the `run` helpers (`requireConnections`, `resolveConnections`, `setupDatasources`) and the same localhost destination safety check, and is **CLI-only**: not wired into profiles or the TUI (`schemasync.go` imports only stdlib, no `config`).
 
 ### JSON Output (`--output json`)
 

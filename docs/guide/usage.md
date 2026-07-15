@@ -29,6 +29,25 @@ pggosync config validate -s source -d dest ./my-sync.yml
 
 ## Recipes
 
+### Create the schema on a fresh destination, then load data
+
+```bash
+# 1. Copy the whole schema (DDL) into the empty destination…
+pggosync schema sync -s prod-replica -d local
+# 2. …then load a data slice into the structure it just created.
+pggosync run -s prod-replica -d local -c app-slice -g by_tenant:42
+```
+
+`schema sync` shells out to `pg_dump --schema-only | psql` (both must be on `PATH`) to copy the entire schema — it ignores groups, `--table`, and scrub. On a non-empty destination it creates only the objects that are missing and skips existing ones. Preview the exact DDL first with `--dry-run`; source and dest are required together.
+
+To make an existing destination's schema an **exact copy** of source (dropping and recreating every object — this wipes their data), add `--clean`:
+
+```bash
+pggosync schema sync -s prod-replica -d local --clean --skip-confirmation
+```
+
+Note `--clean` reconciles *drift* (e.g. a table missing a column source added) only by full drop-and-recreate; it does not `ALTER` in place, so any existing data in those tables is lost.
+
 ### Pull one tenant's data into a local database
 
 ```bash
@@ -149,6 +168,8 @@ pggosync run -s prod-replica -d staging -c app-slice --truncate --no-safety
 | `--cascade` without `--truncate` | Ignored. Cascade only modifies the `TRUNCATE` statement. |
 | `--cascade` + `--defer-constraints` | Cascade is ignored: with deferred constraints the truncate path clears via `DELETE FROM`, and no `TRUNCATE` is issued. |
 | `--source`/`--dest` on `config validate` | Must be passed **together**; one without the other is an error. Omit both for the offline check. |
+| `--source` + `--dest` on `schema sync` | Both **required**. `schema sync` copies the whole schema, so it takes no `--config`/`--group`/`--table`; those are ignored (not accepted). |
+| `--clean` on `schema sync` | Drops and recreates every destination object — **wipes their data**. Without it, existing objects are left untouched and only missing ones are created. |
 | `--group`/`--table` params on `profile sync` | Passing any `--group` replaces the profile's whole group list; any `--table` replaces its stored tables. Flags must precede the profile name. |
 | Parameterised group without params | `--group by_tenant` when the group's filters contain `{1}` is rejected before the sync starts ("unfilled placeholder"). |
 | `--exclude` vs explicit `--table` | Explicitly requesting an excluded table is an error, not a silent skip. |

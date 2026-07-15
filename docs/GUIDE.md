@@ -2,6 +2,8 @@
 
 pggosync copies data between two PostgreSQL databases: it reads rows from a **source** database (never writing to it) and applies them to a **destination** database inside a single transaction. It is designed for the "give me realistic data locally" workflow — pulling a filtered, optionally anonymised slice of a shared or production-like database into a local one.
 
+Copying **rows** (`pggosync run`) and copying the **schema** (`pggosync schema sync`) are separate steps: the data commands assume the destination tables already exist, while `schema sync` recreates the structure itself via `pg_dump`/`psql`. On a brand-new destination you run `schema sync` first, then `run`.
+
 This guide covers the design of the configuration system and how the pieces are meant to fit together. The detail-heavy material is split into sub-guides:
 
 - **[Command Reference](guide/commands.md)** — every command, every flag, and the problem each flag solves

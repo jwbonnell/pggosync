@@ -187,6 +187,34 @@ This is cheaper than `run --dry-run` (no data is copied) but checks less — dry
 
 ---
 
+## `pggosync schema sync`
+
+```
+pggosync schema sync --source <conn> --dest <conn> [--clean] [--dry-run] [--skip-confirmation] [--no-safety] [--quiet]
+```
+
+Copies the **whole database schema** (DDL — tables, indexes, constraints, sequences, etc.) from source to destination. This is the "set up an empty local database, then load data into it" step: run `schema sync` to create the structure, then `run` to fill it. It works by shelling out to **`pg_dump --schema-only`** piped to **`psql`**, so both must be on your `PATH` (they ship with the PostgreSQL client tools). Credentials are passed to those processes as libpq environment variables (`PGHOST`, `PGPASSWORD`, …), never on the command line.
+
+Scope is the entire database — `schema sync` ignores groups, `--table`, `--exclude`, and scrub rules. It is data-only agnostic: no rows are copied.
+
+| Flag | Purpose |
+|---|---|
+| `--source` / `-s`, `--dest` / `-d` | Connection names (both required) |
+| `--clean` | Drop and recreate every object so the destination schema exactly **matches** source (`pg_dump --clean --if-exists`). **Destructive** — DROPs wipe the data in recreated tables. |
+| `--dry-run` / `-dr` | Print the schema DDL that would be applied and exit without touching the destination |
+| `--skip-confirmation` / `-sc` | Skip the confirmation prompt (for scripting) |
+| `--no-safety` / `-ns` | Bypass the localhost-only destination guard (same check as `run`) |
+| `--quiet` / `-q` | Suppress the wrapper's status lines (pg_dump/psql output still prints) |
+
+**How an existing destination is handled:**
+
+- **Default (no `--clean`):** creates objects that are missing on the destination and **leaves existing ones untouched**. Objects that already exist produce a non-fatal "already exists" notice and are skipped — so re-running is safe, and only genuinely new objects are added.
+- **`--clean`:** drops and recreates everything to mirror source exactly. Use this right before a full data reload; never against a destination whose data you want to keep.
+
+> **Not a schema migration.** Because it reconciles whole objects, the default path does **not** fix a *drifted* table — e.g. a destination table that already exists but is missing a column the source added. It only creates wholly-absent objects. To bring such a table in line you must `--clean` it (dropping its data). Column-level reconciliation (`ALTER TABLE … ADD COLUMN` while preserving data) is out of scope — that requires a schema-diff tool, not pg_dump. `schema sync` is CLI-only and is not surfaced in profiles or the TUI.
+
+---
+
 ## `pggosync tables`
 
 ```
