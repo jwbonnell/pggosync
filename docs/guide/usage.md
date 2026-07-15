@@ -105,7 +105,7 @@ pggosync run -s src -d dest -c app-slice --truncate --defer-constraints \
   --concurrency 4 --skip-confirmation
 ```
 
-`--concurrency 4` prefetches up to four source tables in parallel while the destination writes sequentially, hiding source round-trip latency. Diminishing returns past the point where prefetch outpaces the write loop; it also holds more row data in memory at once.
+`--concurrency 4` prefetches up to four source tables in parallel while the destination writes sequentially, hiding source round-trip latency. Diminishing returns past the point where prefetch outpaces the write loop. Each prefetch streams into a bounded buffer (`--buffer-size`, default 32 MiB) that applies backpressure when full, so peak memory stays bounded on the order of `concurrency × --buffer-size` (real RSS runs several times higher) — raising concurrency raises the memory ceiling proportionally, but it never grows with table size.
 
 ### Refresh a shared (remote) staging database
 

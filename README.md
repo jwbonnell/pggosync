@@ -311,6 +311,7 @@ pggosync run --source <name> --dest <name> --config <name-or-path> [flags]
 | `--quiet` | `-q` | false | Suppress per-table progress output |
 | `--dry-run` | `-dr` | false | Simulate without committing changes |
 | `--concurrency` | `-con` | 1 | Number of source tables to pre-fetch concurrently |
+| `--buffer-size` | `-bs` | 32 | Per-table prefetch buffer cap in MiB (peak memory on the order of concurrency × this, higher in practice) |
 
 #### Sync strategies
 
@@ -404,7 +405,8 @@ CLI flags + sync config YAML
     ├─ Optionally defers FK constraints (ALTER CONSTRAINT … DEFERRABLE)
     ├─ Optionally disables user triggers (ALTER TABLE … DISABLE TRIGGER)
     ├─ Launches pre-fetch goroutines: one per task, bounded by --concurrency
-    │   Each goroutine streams COPY TO STDOUT from source into a SafeBuffer
+    │   Each goroutine streams COPY TO STDOUT from source into a bounded SafeBuffer
+    │   (--buffer-size cap; the source COPY blocks when full — backpressure)
     │   (scrub rules are applied as SQL expressions inside this source query)
     ├─ Sequential write loop: drains each SafeBuffer into the transaction
     │   ├─ Truncate path: TRUNCATE/DELETE → COPY FROM STDIN
@@ -421,7 +423,7 @@ CLI flags + sync config YAML
 
 ### Concurrency model
 
-Source pre-fetching is concurrent; destination writes are strictly sequential (one task at a time, all inside the same transaction). The `SafeBuffer` type provides a mutex-protected, condition-variable-backed pipe so that a pre-fetch goroutine can write into a buffer while the destination write loop drains it, without locking both sides simultaneously.
+Source pre-fetching is concurrent; destination writes are strictly sequential (one task at a time, all inside the same transaction). The `SafeBuffer` type provides a mutex-protected, condition-variable-backed pipe so that a pre-fetch goroutine can write into a buffer while the destination write loop drains it, without locking both sides simultaneously. Each buffer is **bounded** by `--buffer-size` (default 32 MiB): the source `COPY` blocks once its buffer is full and resumes as the write loop drains it, so peak memory stays bounded and independent of table size — on the order of `concurrency × --buffer-size`, though real RSS runs several times higher (`bytes.Buffer` growth plus pgx/COPY driver buffers).
 
 ### Package layout
 

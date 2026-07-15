@@ -63,6 +63,7 @@ type syncOptions struct {
 	deferConstraints bool
 	disableTriggers  bool
 	concurrency      int
+	bufferSize       int // per-table prefetch buffer cap in MiB
 	dryRun           bool
 	noSafety         bool
 }
@@ -92,6 +93,7 @@ type syncWizardModel struct {
 	// Phase 5
 	options        syncOptions
 	concurrencyStr string
+	bufferSizeStr  string
 	strategyStr    string // "upsert" | "truncate" | "preserve" — single-select so truncate and preserve can never both be chosen
 
 	// Phase 6 (preview)
@@ -151,8 +153,9 @@ func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 		phase:              phasePickSource,
 		spinner:            s,
 		progress:           progress.New(progress.WithGradient(gradientStart, gradientEnd)),
-		options:            syncOptions{concurrency: 1},
+		options:            syncOptions{concurrency: 1, bufferSize: 32},
 		concurrencyStr:     "1",
+		bufferSizeStr:      "32",
 		selectedTableIndex: 0,
 		showDetailPanel:    false,
 	}
@@ -253,6 +256,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 // Strategy is a single select so the mutually exclusive truncate/preserve can never both be chosen.
 func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	m.concurrencyStr = fmt.Sprintf("%d", m.options.concurrency)
+	m.bufferSizeStr = fmt.Sprintf("%d", m.options.bufferSize)
 	m.strategyStr = "upsert"
 	if m.options.truncate {
 		m.strategyStr = "truncate"
@@ -297,6 +301,18 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 					huh.NewOption("8", "8"),
 				).
 				Value(&m.concurrencyStr),
+			huh.NewSelect[string]().
+				Key("buffersize").
+				Title("Buffer size").
+				Description("Per-table prefetch cap in MiB (peak memory ≈ concurrency × this).").
+				Options(
+					huh.NewOption("8 MiB", "8"),
+					huh.NewOption("16 MiB", "16"),
+					huh.NewOption("32 MiB", "32"),
+					huh.NewOption("64 MiB", "64"),
+					huh.NewOption("128 MiB", "128"),
+				).
+				Value(&m.bufferSizeStr),
 			huh.NewConfirm().
 				Key("dryrun").
 				Title("Dry run?").
@@ -542,6 +558,7 @@ func (m *syncWizardModel) captureForm() {
 		m.options.deferConstraints = m.form.GetBool("defer")
 		m.options.disableTriggers = m.form.GetBool("triggers")
 		m.concurrencyStr = m.form.GetString("concurrency")
+		m.bufferSizeStr = m.form.GetString("buffersize")
 		m.options.dryRun = m.form.GetBool("dryrun")
 		m.options.noSafety = m.form.GetBool("nosafety")
 	case phaseSaveProfile:
@@ -589,6 +606,9 @@ func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 	case phasePickOptions:
 		if _, err := fmt.Sscanf(m.concurrencyStr, "%d", &m.options.concurrency); err != nil {
 			m.options.concurrency = 1
+		}
+		if _, err := fmt.Sscanf(m.bufferSizeStr, "%d", &m.options.bufferSize); err != nil || m.options.bufferSize < 1 {
+			m.options.bufferSize = 32
 		}
 		return m.startPreview()
 
@@ -813,6 +833,7 @@ func (m syncWizardModel) startSync() (syncWizardModel, tea.Cmd) {
 			false,
 			m.options.dryRun,
 			m.options.concurrency,
+			m.options.bufferSize<<20,
 			m.tasks,
 			source,
 			dest,
@@ -975,6 +996,7 @@ func (m syncWizardModel) toProfile(name string) config.SyncProfile {
 		DeferConstraints: m.options.deferConstraints,
 		DisableTriggers:  m.options.disableTriggers,
 		Concurrency:      m.options.concurrency,
+		BufferSize:       m.options.bufferSize,
 		DryRun:           m.options.dryRun,
 		NoSafety:         m.options.noSafety,
 		CreatedAt:        time.Now(),
@@ -996,8 +1018,14 @@ func newSyncWizardModelFromProfile(handler *config.UserConfigHandler, p config.S
 		deferConstraints: p.DeferConstraints,
 		disableTriggers:  p.DisableTriggers,
 		concurrency:      p.Concurrency,
+		bufferSize:       p.BufferSize,
 		dryRun:           p.DryRun,
 		noSafety:         p.NoSafety,
+	}
+	// Legacy profiles saved before --buffer-size have 0 here; fall back to the 32 MiB default so the
+	// buffer stays bounded and the options picker lands on a real choice.
+	if m.options.bufferSize < 1 {
+		m.options.bufferSize = 32
 	}
 	if path, err := handler.ResolveSyncConfigPath(p.ConfigFile); err == nil {
 		if sc, err := config.GetSyncConfig(path); err == nil {

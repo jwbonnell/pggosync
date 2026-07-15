@@ -166,22 +166,38 @@ datasource tests for the new `Truncate` signature and `--cascade`.
 
 ---
 
+## Post-review follow-ups (delivered after Tiers 1–3)
+
+### M8 — bounded streaming with backpressure
+- **What:** `SafeBuffer` is now a bounded blocking buffer: `Write` blocks once the unread length
+  reaches the cap and resumes as the reader drains it, and a new `Close()` unblocks a writer parked
+  at the cap. `Sync` threads a `bufferCap` (bytes) and, on return, cancels the prefetch context,
+  closes every buffer, and waits for all prefetch goroutines. Exposed as `--buffer-size` (MiB,
+  default 32), wired through the CLI, profiles, and the TUI.
+- **Why:** Each task previously buffered its whole table into an unbounded `bytes.Buffer`, so peak
+  memory was `concurrency × table size` — an OOM ceiling on large tables. Peak prefetch memory is
+  bounded on the order of `concurrency × --buffer-size`, independent of table size (real RSS runs
+  several times higher — `bytes.Buffer` growth plus pgx/COPY driver buffers). `Close()` is required
+  because a goroutine parked in the bounded `Write` is outside ctx-aware pgx code, so context
+  cancellation alone would leak it on an early-error return. Deadlock-free because the write loop
+  `Close()`s each buffer as soon as its drain returns — before moving to the next task — which frees
+  that prefetch goroutine's semaphore slot even when the drain returned early, so the launcher can
+  always start the next task's prefetch and the loop can never block on a buffer whose producer never
+  got a slot.
+- **Tests:** `TestSafeBuffer_Bounded`, `TestSafeBuffer_CloseUnblocksWriter` (run under `-race`).
+
 ## Deferred (by decision)
 
 - **M2 — async TUI preview.** The preview currently opens connections and runs a `COUNT(*)` per table
   synchronously inside `Update`, freezing the UI. Proper fix is a `tea.Cmd`; deferred as it needs
   manual TUI verification.
-- **M8 — bounded streaming.** The whole dataset is buffered in RAM (`bytes.Buffer` per task) with no
-  backpressure. A bounded `io.Pipe` per task removes the OOM ceiling; best scoped as the streaming
-  feature below.
 
 ## Remaining backlog / feature suggestions
 
-1. Streaming with backpressure (`io.Pipe` per task) — removes the in-RAM buffering ceiling (M8).
-2. Post-sync verification (`--verify`) — source-vs-dest row-count/checksum check.
-3. Finish schema sync (`sync/schemasync.go` is a stub) — `--schema-only` / DDL diff.
-4. `--output json` — machine-readable per-table summary for scripting/CI.
-5. FK-aware task ordering — topological sort so truncate/insert order is correct without always
+1. Post-sync verification (`--verify`) — source-vs-dest row-count/checksum check.
+2. Finish schema sync (`sync/schemasync.go` is a stub) — `--schema-only` / DDL diff.
+3. `--output json` — machine-readable per-table summary for scripting/CI.
+4. FK-aware task ordering — topological sort so truncate/insert order is correct without always
    needing `--defer-constraints`.
-6. Shell completion + `config lint` — validate a sync config against a live schema.
-7. Global `--where` / column include-exclude, and named masking presets (GDPR-style scrub bundles).
+5. Shell completion + `config lint` — validate a sync config against a live schema.
+6. Global `--where` / column include-exclude, and named masking presets (GDPR-style scrub bundles).

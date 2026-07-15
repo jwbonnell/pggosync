@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,7 +27,9 @@ type SyncResult struct {
 
 // Sync opens a single destination transaction, pre-fetches source rows into SafeBuffers concurrently (bounded by
 // concurrency), drains each buffer sequentially, and commits. Rolls back on any error or when dryRun is true.
-func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (res SyncResult, err error) {
+// bufferCap caps each task's prefetch buffer in bytes (<= 0 for unbounded); total prefetch memory is bounded by
+// concurrency × bufferCap.
+func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quiet bool, dryRun bool, concurrency int, bufferCap int, tasks []Task, source *datasource.ReaderDataSource, dest *datasource.ReadWriteDatasource, out io.Writer) (res SyncResult, err error) {
 	// logf serializes writes to out so goroutine-originated progress lines don't interleave.
 	var outMu sync.Mutex
 	logf := func(format string, args ...any) {
@@ -45,7 +46,7 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 	bufs := make([]*SafeBuffer, len(tasks))
 	for i := range bufs {
-		bufs[i] = NewSafeBuffer(&bytes.Buffer{})
+		bufs[i] = NewSafeBuffer(bufferCap)
 	}
 
 	// Launch a goroutine per task to CopyTo from source into its SafeBuffer.
@@ -55,9 +56,23 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 	sem := make(chan struct{}, concurrency)
 	var prefetchWg sync.WaitGroup
 	prefetchCtx, cancelPrefetch := context.WithCancel(ctx)
-	defer cancelPrefetch()
+	// On every return: cancel the prefetch context (stops COPYs blocked in ctx-aware pgx code),
+	// close every buffer (unblocks any prefetch goroutine parked at the bounded-Write cap, which is
+	// NOT ctx-aware), then wait for all prefetch goroutines to exit so none leak past Sync.
+	defer func() {
+		cancelPrefetch()
+		for _, b := range bufs {
+			b.Close()
+		}
+		prefetchWg.Wait()
+	}()
 
+	// Count the launcher itself so prefetchWg.Wait() (in the cleanup defer) can't observe a
+	// spuriously-zero counter and return while the launcher is still spawning children — the
+	// launcher's child Add(1) calls happen-before its own Done.
+	prefetchWg.Add(1)
 	go func() {
+		defer prefetchWg.Done()
 		for i := range tasks {
 			select {
 			case sem <- struct{}{}:
@@ -179,6 +194,13 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 
 		strategy := taskStrategy(&tasks[i])
 		rowCount, taskErr := ts.SyncFromBuffer(ctx, &tasks[i], bufs[i])
+		// Release this task's buffer as soon as its drain returns, whatever the outcome. On the
+		// normal path SyncFromBuffer reads to EOF and the prefetch goroutine has already exited, so
+		// Close is a no-op. But if SyncFromBuffer ever returns before draining (e.g. an early
+		// error), Close wakes the prefetch goroutine still parked in the bounded Write, freeing its
+		// semaphore slot so the launcher can start the next task's prefetch. Without this the
+		// sequential loop could block forever on bufs[i+1], whose producer never got a slot.
+		bufs[i].Close()
 		res.Tables = append(res.Tables, TableResult{
 			Table:    tasks[i].FullName(),
 			Rows:     rowCount,
@@ -192,8 +214,6 @@ func Sync(ctx context.Context, deferConstraints bool, disableTriggers bool, quie
 			logf("Done %s (%s rows)\n", tasks[i].FullName(), FormatCount(rowCount))
 		}
 	}
-
-	prefetchWg.Wait()
 
 	if len(taskErrs) > 0 {
 		err = fmt.Errorf("%d task(s) failed; first error: %w", len(taskErrs), taskErrs[0])

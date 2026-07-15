@@ -98,6 +98,12 @@ func syncFlags() []cli.Flag {
 			Value:   1,
 			Usage:   "Number of source tables to pre-fetch concurrently.",
 		},
+		&cli.IntFlag{
+			Name:    "buffer-size",
+			Aliases: []string{"bs"},
+			Value:   32,
+			Usage:   "Per-table prefetch buffer cap in MiB (peak memory ≈ concurrency × this).",
+		},
 	}
 }
 
@@ -112,6 +118,7 @@ func cliArgsFromFlags(cCtx *cli.Context) opts.CLIArgs {
 		Quiet:            cCtx.Bool("quiet"),
 		DryRun:           cCtx.Bool("dry-run"),
 		Concurrency:      cCtx.Int("concurrency"),
+		BufferSize:       cCtx.Int("buffer-size"),
 		DeferConstraints: cCtx.Bool("defer-constraints"),
 		DisableTriggers:  cCtx.Bool("disable-triggers"),
 		SyncConfigPath:   cCtx.String("config"),
@@ -160,6 +167,10 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 	}
 	if args.Concurrency < 1 {
 		args.Concurrency = 1
+	}
+	// Non-positive (including a legacy profile with no buffer_size) falls back to the 32 MiB default.
+	if args.BufferSize < 1 {
+		args.BufferSize = 32
 	}
 	srcConn, dstConn, err := resolveConnections(handler, sourceName, destName)
 	if err != nil {
@@ -253,7 +264,7 @@ func executeSync(cCtx *cli.Context, handler *config.UserConfigHandler, sourceNam
 	proceed:
 	}
 
-	if _, err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, tasks, source, destination, os.Stdout); err != nil {
+	if _, err = sync.Sync(cCtx.Context, args.DeferConstraints, args.DisableTriggers, args.Quiet, args.DryRun, args.Concurrency, args.BufferSize<<20, tasks, source, destination, os.Stdout); err != nil {
 		return err
 	}
 

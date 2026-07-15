@@ -37,7 +37,7 @@ Five form steps, then preview → run → results. `Esc` always steps back one s
 
 > **Limitation:** the group picker selects groups by name only — there is no way to supply positional params. Parameterised groups (filters containing `{1}`, …) will fail at the preview step with an "unfilled placeholder" error; run those from the CLI with `--group name:params`.
 
-**Step 5 — Options.** A **Sync strategy** selector — Upsert / Truncate / Preserve — makes the strategy a single choice, so the mutually exclusive truncate and preserve can never both be selected. Below it, toggles and pickers mirroring the remaining CLI flags: cascade truncate, defer FK constraints, disable user triggers, concurrency (1/2/4/8), dry run, and disable safety check. The same semantics and caveats as the flags apply — see the [Command Reference](commands.md#strategy-flags--how-rows-are-written). (A hand-written profile that sets both `truncate` and `preserve` is caught at the preview step and routed back here to pick one.)
+**Step 5 — Options.** A **Sync strategy** selector — Upsert / Truncate / Preserve — makes the strategy a single choice, so the mutually exclusive truncate and preserve can never both be selected. Below it, toggles and pickers mirroring the remaining CLI flags: cascade truncate, defer FK constraints, disable user triggers, concurrency (1/2/4/8), buffer size (8/16/32/64/128 MiB), dry run, and disable safety check. The same semantics and caveats as the flags apply — see the [Command Reference](commands.md#strategy-flags--how-rows-are-written). (A hand-written profile that sets both `truncate` and `preserve` is caught at the preview step and routed back here to pick one.)
 
 ### Preview
 

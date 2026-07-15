@@ -29,6 +29,7 @@ type SyncProfile struct {
 	DeferConstraints bool      `json:"defer_constraints,omitempty" yaml:"defer_constraints,omitempty"`
 	DisableTriggers  bool      `json:"disable_triggers,omitempty" yaml:"disable_triggers,omitempty"`
 	Concurrency      int       `json:"concurrency" yaml:"concurrency"`
+	BufferSize       int       `json:"buffer_size,omitempty" yaml:"buffer_size,omitempty"`
 	DryRun           bool      `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
 	NoSafety         bool      `json:"no_safety,omitempty" yaml:"no_safety,omitempty"`
 	CreatedAt        time.Time `json:"created_at" yaml:"created_at,omitempty"`

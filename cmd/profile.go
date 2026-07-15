@@ -166,6 +166,9 @@ func profileCmd(handler *config.UserConfigHandler) *cli.Command {
 					if !cCtx.IsSet("concurrency") {
 						args.Concurrency = profile.Concurrency
 					}
+					if !cCtx.IsSet("buffer-size") {
+						args.BufferSize = profile.BufferSize
+					}
 					if len(args.Groups) == 0 {
 						args.Groups = profile.Groups
 					}

@@ -84,6 +84,7 @@ Upsert and preserve require a primary key on the destination table; the resolver
 | `--dry-run` | `-dr` | Does the full sync — connects, prefetches, writes inside the transaction — then **rolls back** instead of committing. Validates the entire pipeline (permissions, filters, PKs, data types) with zero destination changes. Costs real time and I/O. |
 | `--quiet` | `-q` | Suppresses per-table progress lines. Combine with `--skip-confirmation` in scripts to keep logs small. |
 | `--concurrency <n>` | `-con` | Number of source tables to prefetch in parallel (default 1). Reads overlap with writes, hiding source latency on multi-table syncs. Destination writes are always sequential regardless. Values below 1 are clamped to 1. |
+| `--buffer-size <mib>` | `-bs` | Per-table prefetch buffer cap in MiB (default 32). Each prefetch streams into a bounded buffer and blocks (backpressure) once full, so peak memory stays bounded and independent of table size — on the order of `concurrency × buffer-size`, though real RSS runs several times higher (`bytes.Buffer` growth plus pgx/COPY driver buffers). Non-positive values fall back to the default. |
 
 ### The confirmation prompt
 

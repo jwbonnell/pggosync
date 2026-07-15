@@ -68,12 +68,13 @@ CLI flags + sync config
    ├─ Opens a single destination transaction
    ├─ Optionally defers FK constraints or disables user triggers
    ├─ Pre-fetches source rows concurrently (one goroutine per task, capped by --concurrency)
-   │   into SafeBuffers; scrub rules are applied as SQL expressions in the source COPY query
+   │   into bounded SafeBuffers (--buffer-size cap, default 32 MiB; the source COPY blocks when
+   │   full — backpressure); scrub rules are applied as SQL expressions in the source COPY query
    ├─ Drains each SafeBuffer sequentially via TableSync.SyncFromBuffer()
    └─ Commits or rolls back (rollback on any task error or when --dry-run)
 ```
 
-Source pre-fetching is concurrent; destination writes are strictly sequential and share one transaction. `SafeBuffer` is a mutex/condition-variable pipe that lets a prefetch goroutine fill a buffer while the write loop drains it.
+Source pre-fetching is concurrent; destination writes are strictly sequential and share one transaction. `SafeBuffer` is a mutex/condition-variable pipe that lets a prefetch goroutine fill a buffer while the write loop drains it. It is **bounded** by `--buffer-size` (bytes; default 32 MiB, passed to `sync.Sync`): `Write` blocks once the buffer is full and resumes as the reader drains it, so peak prefetch memory is bounded by `concurrency × buffer-size` rather than table size (real RSS runs several times higher — `bytes.Buffer` growth plus pgx/COPY driver buffers). `Sync` calls `SafeBuffer.Close()` on return to unblock any prefetch goroutine parked at the cap (which is not context-aware), preventing goroutine leaks on early error.
 
 ### TableSync: Two Copy Strategies
 

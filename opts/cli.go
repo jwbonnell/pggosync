@@ -11,6 +11,7 @@ type CLIArgs struct {
 	Quiet            bool
 	DryRun           bool
 	Concurrency      int
+	BufferSize       int // per-table prefetch buffer cap in MiB
 	SyncConfigPath   string
 	Groups           []string
 	Tables           []string
