@@ -83,6 +83,12 @@ dev-init:
 	go run main.go conn init source
 	go run main.go conn init dest
 
+# Schema sync: copy the whole DDL (pg_dump | psql) into the destination — the "create
+# the structure first" step before any data sync. Default create-missing path (existing
+# objects are skipped). Add --dry-run to preview the DDL, or --clean to drop & recreate.
+dev-schema-sync: dev-init
+	go run main.go schema sync --source source --dest dest
+
 # Truncate path: wipe destination tables, then COPY straight from source.
 dev-truncate: dev-init
 	$(DEV_RUN) --config ./_configs/configs/default.ym --group country_var_1:2 --truncate
