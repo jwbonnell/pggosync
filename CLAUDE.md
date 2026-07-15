@@ -126,4 +126,4 @@ By default the destination database must resolve to `localhost` or `127.0.0.1`. 
 
 ## Commit Messages
 
-At the end of every code update, generate a brief commit message for the user to copy if they would like. Do not commit automatically — just provide the suggested message.
+Any time you make changes to the repository — code, tests, docs, config, or anything else — always finish by providing a brief draft commit message for the user to review and copy. Provide one every time changes are made, including small or partial updates. Never commit automatically; just supply the suggested message and let the user decide whether to use it.
