@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/sync/data"
 	"gopkg.in/yaml.v3"
@@ -37,6 +37,7 @@ type syncConfigGroup struct {
 type syncConfigBuilderModel struct {
 	phase  syncConfigPhase
 	form   *huh.Form
+	styles styles
 	err    string
 	status string
 	width  int
@@ -61,17 +62,40 @@ type syncConfigBuilderModel struct {
 }
 
 // newSyncConfigModel creates a blank sync config builder at the first phase.
-func newSyncConfigModel() syncConfigBuilderModel {
+func newSyncConfigModel(s styles) syncConfigBuilderModel {
 	m := syncConfigBuilderModel{
-		phase: scPhaseMain,
+		phase:  scPhaseMain,
+		styles: s,
 	}
 	m.form = m.buildMainForm()
 	return m
 }
 
+// withStyles re-themes the builder after the terminal background is known.
+//
+// A form bakes in its theme when built, so the one standing at construction has to be rebuilt to
+// pick up the new palette. That is only safe because the background reply lands at startup, while
+// the builder is still on its first, untouched form — a rebuild resets the bound fields, so doing
+// it mid-flow would throw away the user's input. Every later form is built by advance(), which
+// reads the already-updated styles.
+func (m syncConfigBuilderModel) withStyles(s styles) syncConfigBuilderModel {
+	m.styles = s
+	if m.phase == scPhaseMain {
+		m.form = m.buildMainForm()
+	}
+	return m
+}
+
+// newForm builds a themed form sized to the current terminal. Every builder below goes through
+// it so that a form built mid-flow is laid out for the real terminal rather than huh's default
+// width; see sizeForm.
+func (m *syncConfigBuilderModel) newForm(groups ...*huh.Group) *huh.Form {
+	return sizeForm(m.styles.newForm(groups...), m.width)
+}
+
 // buildMainForm creates the description and exclude-tables input form.
 func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("description").
@@ -90,7 +114,7 @@ func (m *syncConfigBuilderModel) buildMainForm() *huh.Form {
 // buildAddGroupForm creates the group-name input form and resets pendingGroupName.
 func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 	m.pendingGroupName = ""
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("groupname").
@@ -105,7 +129,7 @@ func (m *syncConfigBuilderModel) buildAddGroupForm() *huh.Form {
 func (m *syncConfigBuilderModel) buildAddTableForm() *huh.Form {
 	m.pendingTableName = ""
 	m.pendingFilter = ""
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("tablename").
@@ -132,7 +156,7 @@ func (m *syncConfigBuilderModel) buildAddScrubForm() *huh.Form {
 		ruleOptions[i] = huh.NewOption(r, r)
 	}
 
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("scrubcol").
@@ -153,24 +177,12 @@ func (m *syncConfigBuilderModel) buildAddScrubForm() *huh.Form {
 	)
 }
 
-// buildFinishTableForm asks whether to add another table after scrub rules are done.
-func (m *syncConfigBuilderModel) buildFinishTableForm() *huh.Form {
-	m.addAnotherTable = false
-	return newForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Add another table to this group?").
-				Value(&m.addAnotherTable),
-		),
-	)
-}
-
 // buildSaveForm creates the finish form: add another table?, add another group?, and save path.
 func (m *syncConfigBuilderModel) buildSaveForm() *huh.Form {
 	m.savePath = ""
 	m.addAnotherGroup = false
 	m.addAnotherTable = false
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Key("another_table").
@@ -202,8 +214,12 @@ func (m syncConfigBuilderModel) Update(msg tea.Msg) (syncConfigBuilderModel, tea
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// sizeForm pins the form's width, which stops huh from adopting resizes itself.
+		if m.form != nil {
+			m.form.WithWidth(msg.Width)
+		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.phase == scPhaseDone {
 			switch msg.String() {
 			case "esc", "q", "enter":
@@ -449,24 +465,24 @@ func (m syncConfigBuilderModel) View() string {
 
 	switch m.phase {
 	case scPhaseMain:
-		sb.WriteString(wizardTitleStyle.Render("Build Sync Config — Step 1: Description & Exclusions"))
+		sb.WriteString(m.styles.wizardTitle.Render("Build Sync Config — Step 1: Description & Exclusions"))
 		sb.WriteString("\n")
 		sb.WriteString(m.form.View())
 
 	case scPhaseAddGroup:
-		sb.WriteString(wizardTitleStyle.Render(fmt.Sprintf("Build Sync Config — Add Group (%d so far)", len(m.groups))))
+		sb.WriteString(m.styles.wizardTitle.Render(fmt.Sprintf("Build Sync Config — Add Group (%d so far)", len(m.groups))))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render(m.err) + "\n")
+			sb.WriteString(m.styles.err.Render(m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case scPhaseAddTable:
 		lastGroup := m.groups[len(m.groups)-1]
-		sb.WriteString(wizardTitleStyle.Render(fmt.Sprintf("Build Sync Config — Group %q: Add Table (%d so far)", lastGroup.name, len(lastGroup.tables))))
+		sb.WriteString(m.styles.wizardTitle.Render(fmt.Sprintf("Build Sync Config — Group %q: Add Table (%d so far)", lastGroup.name, len(lastGroup.tables))))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render(m.err) + "\n")
+			sb.WriteString(m.styles.err.Render(m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
@@ -482,30 +498,30 @@ func (m syncConfigBuilderModel) View() string {
 			scrubInfo = fmt.Sprintf("  [%s]", strings.Join(labels, ", "))
 		}
 		title := fmt.Sprintf("Build Sync Config — Scrub %s%s", lastTable.name, scrubInfo)
-		sb.WriteString(wizardTitleStyle.Render(title))
+		sb.WriteString(m.styles.wizardTitle.Render(title))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render(m.err) + "\n")
+			sb.WriteString(m.styles.err.Render(m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case scPhaseSave:
-		sb.WriteString(wizardTitleStyle.Render("Build Sync Config — Finish"))
+		sb.WriteString(m.styles.wizardTitle.Render("Build Sync Config — Finish"))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render(m.err) + "\n")
+			sb.WriteString(m.styles.err.Render(m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case scPhaseDone:
-		sb.WriteString(successStyle.Render("Sync config saved!"))
+		sb.WriteString(m.styles.success.Render("Sync config saved!"))
 		sb.WriteString("\n")
 		sb.WriteString(m.status + "\n\n")
 		sb.WriteString(summaryView(m))
-		sb.WriteString("\n" + mutedStyle.Render("press any key to return to the menu"))
+		sb.WriteString("\n" + m.styles.muted.Render("press any key to return to the menu"))
 	}
 
-	return docStyle.Render(sb.String())
+	return m.styles.doc.Render(sb.String())
 }
 
 // summaryView formats the completed config as a compact YAML-like summary for the done screen.
@@ -535,5 +551,5 @@ func summaryView(m syncConfigBuilderModel) string {
 			}
 		}
 	}
-	return mutedStyle.Render(sb.String())
+	return m.styles.muted.Render(sb.String())
 }

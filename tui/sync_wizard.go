@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/opts"
@@ -73,6 +73,7 @@ type syncWizardModel struct {
 	handler  *config.UserConfigHandler
 	phase    wizardPhase
 	form     *huh.Form
+	styles   styles
 	width    int
 	height   int
 	err      string
@@ -156,16 +157,17 @@ type previewResultMsg struct {
 	returnPhase wizardPhase
 }
 
-func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(colorPrimary)
+func newSyncWizardModel(st styles, handler *config.UserConfigHandler) syncWizardModel {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(st.c.primary)
 
 	m := syncWizardModel{
 		handler:            handler,
 		phase:              phasePickSource,
-		spinner:            s,
-		progress:           progress.New(progress.WithGradient(gradientStart, gradientEnd)),
+		styles:             st,
+		spinner:            sp,
+		progress:           progress.New(progress.WithColors(lipgloss.Color(gradientStart), lipgloss.Color(gradientEnd))),
 		options:            syncOptions{concurrency: 1, bufferSize: 32},
 		concurrencyStr:     "1",
 		bufferSizeStr:      "32",
@@ -173,6 +175,23 @@ func newSyncWizardModel(handler *config.UserConfigHandler) syncWizardModel {
 		showDetailPanel:    false,
 	}
 	m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
+	return m
+}
+
+// withStyles re-themes the wizard after the terminal background is known. The spinner holds a
+// baked-in style, so it is recoloured here.
+//
+// The form standing at construction is rebuilt to pick up the new palette. That is only safe
+// because the background reply lands at startup, while the wizard is still on its first,
+// untouched form — a rebuild resets the bound fields, so doing it mid-flow would throw away the
+// user's input. Every later form is built by advancePhase/goBack, which read the updated styles.
+// The progress bar keeps its own fixed greens (see gradientStart) and needs no rebuild.
+func (m syncWizardModel) withStyles(s styles) syncWizardModel {
+	m.styles = s
+	m.spinner.Style = lipgloss.NewStyle().Foreground(s.c.primary)
+	if m.phase == phasePickSource {
+		m.form = m.buildPickConnectionForm("Source connection", "Which database is the sync source?", &m.selectedSource)
+	}
 	return m
 }
 
@@ -195,6 +214,13 @@ func (m syncWizardModel) isPreviewLoading() bool {
 
 // ── Form builders ──────────────────────────────────────────────────────────────
 
+// newForm builds a themed form sized to the current terminal. Every builder below goes through
+// it so that a form built mid-flow is laid out for the real terminal rather than huh's default
+// width; see sizeForm.
+func (m *syncWizardModel) newForm(groups ...*huh.Group) *huh.Form {
+	return sizeForm(m.styles.newForm(groups...), m.width)
+}
+
 // buildPickConnectionForm creates a dropdown of all saved connections, writing the selection into target.
 func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *string) *huh.Form {
 	conns, _ := m.handler.ListConnections()
@@ -205,7 +231,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 	if len(options) == 0 {
 		options = []huh.Option[string]{huh.NewOption("(none — run pggosync conn init first)", "")}
 	}
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Key("conn").
@@ -219,7 +245,7 @@ func (m *syncWizardModel) buildPickConnectionForm(title, desc string, target *st
 
 // buildSyncFileForm creates the sync config path input form.
 func (m *syncWizardModel) buildSyncFileForm() *huh.Form {
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("config").
@@ -238,7 +264,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 		groupKeys = append(groupKeys, huh.NewOption(name, name))
 	}
 	if len(groupKeys) > 0 {
-		return newForm(
+		return m.newForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Key("groups").
@@ -254,7 +280,7 @@ func (m *syncWizardModel) buildGroupsForm() *huh.Form {
 			),
 		)
 	}
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("tables").
@@ -276,7 +302,7 @@ func (m *syncWizardModel) buildOptionsForm() *huh.Form {
 	} else if m.options.preserve {
 		m.strategyStr = "preserve"
 	}
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Key("strategy").
@@ -353,7 +379,11 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Size the progress bar to the terminal, leaving room for the docStyle margin
+		// sizeForm pins the form's width, which stops huh from adopting resizes itself.
+		if m.form != nil {
+			m.form.WithWidth(msg.Width)
+		}
+		// Size the progress bar to the terminal, leaving room for the document margin
 		// and the "N / M tables" label; clamp so it never collapses or runs off-screen.
 		barWidth := msg.Width - 30
 		if barWidth < 20 {
@@ -362,13 +392,13 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		if barWidth > 80 {
 			barWidth = 80
 		}
-		m.progress.Width = barWidth
+		m.progress.SetWidth(barWidth)
 		if m.phase == phasePreview {
-			m.preview.Width = msg.Width - 4
-			m.preview.Height = msg.Height - 6
+			m.preview.SetWidth(msg.Width - 4)
+			m.preview.SetHeight(msg.Height - 6)
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch m.phase {
 		case phasePreviewLoading:
 			// Cancel the in-flight resolution and drop back to the options form.
@@ -387,7 +417,7 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		case phaseResults:
 			switch msg.String() {
 			case "r":
-				next := newSyncWizardModel(m.handler)
+				next := newSyncWizardModel(m.styles, m.handler)
 				return next, next.Init()
 			case "esc", "q":
 				return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
@@ -465,7 +495,7 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 		m.tasks = msg.tasks
 		m.err = ""
 		m.previewContent = msg.content
-		vp := viewport.New(m.width-4, m.height-6)
+		vp := viewport.New(viewport.WithWidth(m.width-4), viewport.WithHeight(m.height-6))
 		vp.SetContent(m.previewContent)
 		m.preview = vp
 		m.phase = phasePreview
@@ -510,7 +540,7 @@ func (m syncWizardModel) Update(msg tea.Msg) (syncWizardModel, tea.Cmd) {
 }
 
 // handlePreviewKey processes keystrokes on the preview screen: Enter/y starts the sync, Esc/b goes back to options.
-func (m syncWizardModel) handlePreviewKey(msg tea.KeyMsg) (syncWizardModel, tea.Cmd) {
+func (m syncWizardModel) handlePreviewKey(msg tea.KeyPressMsg) (syncWizardModel, tea.Cmd) {
 	switch msg.String() {
 	case "enter", "y":
 		return m.startSync()
@@ -550,13 +580,18 @@ func (m syncWizardModel) goBack() (syncWizardModel, tea.Cmd) {
 	return m, m.form.Init()
 }
 
-// advancePhase moves to the next phase after a form completes, loading the sync config at the file-pick step.
 // captureForm copies the just-completed form's values out of the huh form and into
 // the model's fields, keyed by the current phase. This is necessary because huh binds
 // each field via a pointer captured when the form was built; the model is copied by
 // value on every Update (bubbletea) so those bound pointers target a stale copy and the
 // struct fields never receive the user's input. The *huh.Form itself is a shared pointer,
 // so reading through it (by key) is the reliable source of truth.
+//
+// This does not make the fields' .Value(&ptr) bindings redundant — the two move data in
+// opposite directions. A binding is how huh *seeds* a field when the form is built (it reads
+// through the pointer once), which is what puts a launched profile's saved options into the
+// options form; captureForm is how values get back *out*. Dropping either one compiles fine and
+// breaks silently, so both are covered by tests: see form_seed_test.go and model_capture_test.go.
 func (m *syncWizardModel) captureForm() {
 	switch m.phase {
 	case phasePickSource:
@@ -587,6 +622,8 @@ func (m *syncWizardModel) captureForm() {
 	}
 }
 
+// advancePhase moves to the next phase after a form completes, loading the sync config at the
+// file-pick step.
 func (m syncWizardModel) advancePhase() (syncWizardModel, tea.Cmd) {
 	m.captureForm()
 	switch m.phase {
@@ -1010,7 +1047,7 @@ func parseFailedLine(line string) (table, errMsg string, ok bool) {
 
 // buildSaveProfileForm creates a single-input form asking for the profile name.
 func (m *syncWizardModel) buildSaveProfileForm() *huh.Form {
-	return newForm(
+	return m.newForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Key("profile").
@@ -1045,8 +1082,8 @@ func (m syncWizardModel) toProfile(name string) config.SyncProfile {
 }
 
 // newSyncWizardModelFromProfile builds a wizard pre-populated from a saved profile, ready to call buildPreview().
-func newSyncWizardModelFromProfile(handler *config.UserConfigHandler, p config.SyncProfile) syncWizardModel {
-	m := newSyncWizardModel(handler)
+func newSyncWizardModelFromProfile(st styles, handler *config.UserConfigHandler, p config.SyncProfile) syncWizardModel {
+	m := newSyncWizardModel(st, handler)
 	m.selectedSource = p.Source
 	m.selectedDest = p.Dest
 	m.syncConfigPath = p.ConfigFile
@@ -1121,7 +1158,7 @@ func (m syncWizardModel) renderDetailPanel() string {
 	st := m.tableStates[m.selectedTableIndex]
 
 	var sb strings.Builder
-	sb.WriteString(detailTitleStyle.Render(task.FullName()))
+	sb.WriteString(m.styles.detailTitle.Render(task.FullName()))
 	sb.WriteString("\n\n")
 
 	statusLabel := "queued"
@@ -1135,7 +1172,7 @@ func (m syncWizardModel) renderDetailPanel() string {
 	case tablePrefetching, tablePrefetchReady:
 		statusLabel = "prefetching"
 	}
-	sb.WriteString(detailRow("Status", statusStyle(st.phase).Render(statusLabel)))
+	sb.WriteString(detailRow(m.styles, "Status", m.styles.statusStyle(st.phase).Render(statusLabel)))
 
 	strategy := "upsert"
 	if task.Truncate && !task.Preserve {
@@ -1143,41 +1180,41 @@ func (m syncWizardModel) renderDetailPanel() string {
 	} else if task.Preserve {
 		strategy = "preserve"
 	}
-	sb.WriteString(detailRow("Strategy", strategy))
+	sb.WriteString(detailRow(m.styles, "Strategy", strategy))
 
 	if task.SourceRowCount > 0 {
-		sb.WriteString(detailRow("Source rows", sync.FormatCount(task.SourceRowCount)))
+		sb.WriteString(detailRow(m.styles, "Source rows", sync.FormatCount(task.SourceRowCount)))
 	}
 	if task.DestRowCount > 0 {
-		sb.WriteString(detailRow("Dest rows (before)", sync.FormatCount(task.DestRowCount)))
+		sb.WriteString(detailRow(m.styles, "Dest rows (before)", sync.FormatCount(task.DestRowCount)))
 	}
 	if st.rows > 0 {
-		sb.WriteString(detailRow("Rows synced", sync.FormatCount(st.rows)))
+		sb.WriteString(detailRow(m.styles, "Rows synced", sync.FormatCount(st.rows)))
 	}
 	if st.elapsed > 0 {
-		sb.WriteString(detailRow("Elapsed", st.elapsed.Round(time.Millisecond).String()))
+		sb.WriteString(detailRow(m.styles, "Elapsed", st.elapsed.Round(time.Millisecond).String()))
 	}
 	if task.Filter != "" {
-		sb.WriteString(detailRow("Filter", task.Filter))
+		sb.WriteString(detailRow(m.styles, "Filter", task.Filter))
 	}
 	if len(task.ScrubRules) > 0 {
-		sb.WriteString(detailKeyStyle.Render("Scrub rules:\n"))
+		sb.WriteString(m.styles.detailKey.Render("Scrub rules:\n"))
 		for _, r := range task.ScrubRules {
-			sb.WriteString(fmt.Sprintf("    %s → %s\n", detailValueStyle.Render(r.Column), scrubStyle.Render(data.RuleLabel(r.Rule))))
+			sb.WriteString(fmt.Sprintf("    %s → %s\n", m.styles.detailValue.Render(r.Column), m.styles.scrub.Render(data.RuleLabel(r.Rule))))
 		}
 	}
 	if st.errMsg != "" {
 		sb.WriteString("\n")
-		sb.WriteString(detailKeyStyle.Render("Error:\n"))
-		sb.WriteString(errorStyle.Render(st.errMsg))
+		sb.WriteString(m.styles.detailKey.Render("Error:\n"))
+		sb.WriteString(m.styles.err.Render(st.errMsg))
 	}
 
-	return detailBorderStyle.Render(sb.String())
+	return m.styles.detailBorder.Render(sb.String())
 }
 
 // detailRow formats a key-value pair for the detail panel.
-func detailRow(key, value string) string {
-	return fmt.Sprintf("%s  %s\n", detailKeyStyle.Render(key+":"), detailValueStyle.Render(value))
+func detailRow(s styles, key, value string) string {
+	return fmt.Sprintf("%s  %s\n", s.detailKey.Render(key+":"), s.detailValue.Render(value))
 }
 
 // ── View ───────────────────────────────────────────────────────────────────────
@@ -1188,58 +1225,58 @@ func (m syncWizardModel) View() string {
 
 	switch m.phase {
 	case phasePickSource:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 1 of 5: Source Connection"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Step 1 of 5: Source Connection"))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+			sb.WriteString(m.styles.err.Render("Error: "+m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case phasePickDest:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 2 of 5: Destination Connection"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Step 2 of 5: Destination Connection"))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+			sb.WriteString(m.styles.err.Render("Error: "+m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case phasePickSyncFile:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 3 of 5: Sync Config File"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Step 3 of 5: Sync Config File"))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+			sb.WriteString(m.styles.err.Render("Error: "+m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case phasePickGroupsAndTables:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 4 of 5: Groups & Tables"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Step 4 of 5: Groups & Tables"))
 		sb.WriteString("\n")
 		sb.WriteString(m.form.View())
 
 	case phasePickOptions:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Step 5 of 5: Options"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Step 5 of 5: Options"))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+			sb.WriteString(m.styles.err.Render("Error: "+m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
 	case phasePreviewLoading:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Preview"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Preview"))
 		sb.WriteString("\n\n")
 		sb.WriteString(fmt.Sprintf("  %s Resolving tables and counting rows…\n", m.spinner.View()))
 		sb.WriteString("\n  esc to cancel\n")
 
 	case phasePreview:
-		sb.WriteString(wizardTitleStyle.Render("Run Sync — Preview"))
+		sb.WriteString(m.styles.wizardTitle.Render("Run Sync — Preview"))
 		sb.WriteString("\n")
-		sb.WriteString(borderStyle.Render(m.preview.View()))
+		sb.WriteString(m.styles.border.Render(m.preview.View()))
 
 	case phaseSaveProfile:
-		sb.WriteString(wizardTitleStyle.Render("Save Profile"))
+		sb.WriteString(m.styles.wizardTitle.Render("Save Profile"))
 		sb.WriteString("\n")
 		if m.err != "" {
-			sb.WriteString(errorStyle.Render("Error: "+m.err) + "\n")
+			sb.WriteString(m.styles.err.Render("Error: "+m.err) + "\n")
 		}
 		sb.WriteString(m.form.View())
 
@@ -1249,7 +1286,7 @@ func (m syncWizardModel) View() string {
 			label = "Dry run"
 		}
 		elapsed := time.Since(m.startTime).Round(time.Second)
-		header := wizardTitleStyle.Render(fmt.Sprintf("%s %s...  %s", m.spinner.View(), label, elapsed))
+		header := m.styles.wizardTitle.Render(fmt.Sprintf("%s %s...  %s", m.spinner.View(), label, elapsed))
 		sb.WriteString(header)
 		sb.WriteString("\n\n")
 
@@ -1286,13 +1323,13 @@ func (m syncWizardModel) View() string {
 
 		var tableList strings.Builder
 		if offset > 0 {
-			tableList.WriteString(fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("... %d more above", offset))))
+			tableList.WriteString(fmt.Sprintf("  %s\n", m.styles.help.Render(fmt.Sprintf("... %d more above", offset))))
 		}
 		for i := offset; i < end; i++ {
 			t := m.tasks[i]
 			st := m.tableStates[i]
 			var indicatorChar, detail string
-			indicatorStyle := statusStyle(st.phase)
+			indicatorStyle := m.styles.statusStyle(st.phase)
 			failed := false
 			switch st.phase {
 			case tableDone:
@@ -1322,21 +1359,21 @@ func (m syncWizardModel) View() string {
 			if i == m.selectedTableIndex {
 				// Plain text under a single background style; nested ANSI resets would cut the highlight short.
 				line := fmt.Sprintf("  %s  %-40s%s  %s", indicatorChar, t.FullName(), scrubBadge, detail)
-				tableList.WriteString(selectedRowStyle.Render(line) + "\n")
+				tableList.WriteString(m.styles.selectedRow.Render(line) + "\n")
 			} else {
 				detailStyled := detail
 				if failed {
-					detailStyled = errorStyle.Render(detail)
+					detailStyled = m.styles.err.Render(detail)
 				}
 				badgeStyled := scrubBadge
 				if scrubBadge != "" {
-					badgeStyled = scrubStyle.Render(scrubBadge)
+					badgeStyled = m.styles.scrub.Render(scrubBadge)
 				}
 				tableList.WriteString(fmt.Sprintf("  %s  %-40s%s  %s\n", indicatorStyle.Render(indicatorChar), t.FullName(), badgeStyled, detailStyled))
 			}
 		}
 		if end < len(m.tasks) {
-			tableList.WriteString(fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("... and %d more", len(m.tasks)-end))))
+			tableList.WriteString(fmt.Sprintf("  %s\n", m.styles.help.Render(fmt.Sprintf("... and %d more", len(m.tasks)-end))))
 		}
 
 		// Footer stats
@@ -1348,7 +1385,7 @@ func (m syncWizardModel) View() string {
 			statsLine = fmt.Sprintf("  %s total rows\n", sync.FormatCount(m.totalRowsSynced))
 		}
 
-		helpText := helpStyle.Render("j/k: navigate  d: detail  q: cancel sync")
+		helpText := m.styles.help.Render("j/k: navigate  d: detail  q: cancel sync")
 
 		// Compose layout
 		if m.showDetailPanel && m.width >= 100 && len(m.tasks) > 0 {
@@ -1379,11 +1416,11 @@ func (m syncWizardModel) View() string {
 
 	case phaseResults:
 		if m.syncErr != nil {
-			sb.WriteString(errorStyle.Render(fmt.Sprintf("Sync failed: %v", m.syncErr)))
+			sb.WriteString(m.styles.err.Render(fmt.Sprintf("Sync failed: %v", m.syncErr)))
 		} else if m.options.dryRun {
-			sb.WriteString(successStyle.Render("Dry run complete"))
+			sb.WriteString(m.styles.success.Render("Dry run complete"))
 		} else {
-			sb.WriteString(successStyle.Render("Sync complete"))
+			sb.WriteString(m.styles.success.Render("Sync complete"))
 		}
 		sb.WriteString(fmt.Sprintf("  (%d tables, %s)\n\n", len(m.tasks), m.elapsed.Round(time.Millisecond)))
 		if len(m.syncResult.Tables) > 0 {
@@ -1392,12 +1429,12 @@ func (m syncWizardModel) View() string {
 			stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", strings.Repeat("─", 40), strings.Repeat("─", 9), strings.Repeat("─", 10)))
 			for _, tr := range m.syncResult.Tables {
 				if tr.Err != nil {
-					stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", tr.Table, tr.Strategy, errorStyle.Render("FAILED: "+tr.Err.Error())))
+					stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", tr.Table, tr.Strategy, m.styles.err.Render("FAILED: "+tr.Err.Error())))
 				} else {
 					stats.WriteString(fmt.Sprintf("  %-40s  %-9s  %s\n", tr.Table, tr.Strategy, sync.FormatCount(tr.Rows)))
 				}
 			}
-			sb.WriteString(borderStyle.Render(stats.String()))
+			sb.WriteString(m.styles.border.Render(stats.String()))
 		}
 		if m.verified && len(m.verifyResult.Tables) > 0 {
 			var vs strings.Builder
@@ -1406,28 +1443,28 @@ func (m syncWizardModel) View() string {
 			for _, tv := range m.verifyResult.Tables {
 				// Keep the styled mark in the trailing column so ANSI codes never throw off the
 				// fixed-width table-name column.
-				mark := successStyle.Render("✓")
+				mark := m.styles.success.Render("✓")
 				detail := tv.Detail
 				if tv.Err != nil {
-					mark = errorStyle.Render("✗")
+					mark = m.styles.err.Render("✗")
 					detail = "ERROR: " + tv.Err.Error()
 				} else if !tv.OK {
-					mark = errorStyle.Render("✗")
+					mark = m.styles.err.Render("✗")
 				}
 				vs.WriteString(fmt.Sprintf("  %-40s  %s %s\n", tv.Table, mark, detail))
 			}
 			sb.WriteString("\n")
-			sb.WriteString(borderStyle.Render(vs.String()))
+			sb.WriteString(m.styles.border.Render(vs.String()))
 			if !m.verifyResult.OK() {
-				sb.WriteString("\n" + errorStyle.Render("Verification failed — destination row counts do not match the source."))
+				sb.WriteString("\n" + m.styles.err.Render("Verification failed — destination row counts do not match the source."))
 			}
 		}
 		if m.savedProfileMsg != "" {
-			sb.WriteString(successStyle.Render(m.savedProfileMsg) + "\n")
+			sb.WriteString(m.styles.success.Render(m.savedProfileMsg) + "\n")
 		}
 		sb.WriteString("\n")
-		sb.WriteString(helpStyle.Render("r: run again   p: save as profile   esc/q: main menu"))
+		sb.WriteString(m.styles.help.Render("r: run again   p: save as profile   esc/q: main menu"))
 	}
 
-	return docStyle.Render(sb.String())
+	return m.styles.doc.Render(sb.String())
 }

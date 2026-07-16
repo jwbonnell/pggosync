@@ -104,6 +104,37 @@ A `config.SyncProfile` is a named bundle of sync options (source, dest, config f
 | `sync/data/` | Scrub rule → SQL expression mapping |
 | `tui/` | Interactive terminal UI (Bubble Tea + Huh): sync wizard, connection manager, sync-config builder, profiles |
 
+### Charm Stack (v2)
+
+The TUI runs on the **v2** Charm libraries, whose import path is the `charm.land` vanity domain, not
+`github.com/charmbracelet` — `charm.land/{bubbletea,bubbles,huh,lipgloss}/v2`. (The GitHub paths are
+not importable at v2: those modules declare themselves as `charm.land/...`.) `urfave/cli/v2` is
+unrelated to this stack and stays; Charm has no CLI parser (their `fang` only wraps `spf13/cobra`).
+
+Three v2 behaviours are load-bearing here, and all three fail *silently* — nothing catches them at
+compile time:
+
+- **Styled CLI output must be printed with `lipgloss.Print*` / `Fprint*`, never `fmt.Print*`.**
+  lipgloss v2 removed the renderer, so `Style.Render` always emits full-fidelity ANSI and
+  downsampling happens at print time. Printing styled text with `fmt` leaks escape codes into
+  pipes, files and `NO_COLOR` runs. See `cmd/style.go`. (`cmd/jsonoutput.go` is unstyled and must
+  stay on `fmt`.)
+- **There is no `AdaptiveColor`.** Nothing resolves the terminal background for you. The TUI asks
+  for it once (`tea.RequestBackgroundColor` in `tui/tui.go`, answered by `tea.BackgroundColorMsg`)
+  and builds a `styles` struct via `newStyles(isDark)` that is threaded through the screens;
+  `cmd/` and the standalone connection form, which are not Bubble Tea programs, call
+  `lipgloss.HasDarkBackground` directly. Adding a colour means adding a `lightDark` pair in
+  `tui/styles.go`, not a package-level `var`.
+- **`tui/styles.go`'s `formTheme` deliberately ignores the `isDark` huh hands it**, using the
+  already-resolved palette instead. huh tracks the background per-`Form` and defaults it to false
+  until a `tea.BackgroundColorMsg` reaches that form — and this app rebuilds its form on every
+  phase change, so a form built after startup would never see one and would render light on a dark
+  terminal.
+
+Also note the key API: `tea.KeyMsg` is now an interface — match `tea.KeyPressMsg` — and the space
+bar reports as `"space"`, not `" "`. `tui/model_capture_test.go` pins that (and `captureForm`)
+because the compiler cannot.
+
 ### Post-Sync Verification
 
 `--verify` runs `sync.Verify` (`sync/verify.go`) **after** `sync.Sync` commits — it is invoked from `executeSync` (`cmd/run.go`) for the CLI and from the wizard's sync goroutine (`tui/sync_wizard.go`) for the TUI. For each task it re-counts the source with the task filter and the destination whole-table, then compares by strategy: truncate must match exactly, upsert/preserve must have `dest >= source` (the destination keeps rows outside the synced slice). A mismatch is surfaced as a non-zero CLI exit / a red results banner in the TUI; the sync has already committed, so verification cannot roll anything back. It is a **row-count** check only — never a value/checksum comparison, because scrub rules make source and destination values differ by design (and non-deterministic rules would never match). Skipped under `--dry-run`. Threaded through the CLI flag, profiles (`Verify`), and the TUI options like the other flags.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/opts"
@@ -350,16 +351,16 @@ func printVerifyResults(vr sync.VerifyResult) {
 		var status, detail string
 		switch {
 		case tv.Err != nil:
-			status = bannerFailStyle.Render("ERROR")
+			status = bannerFailStyle().Render("ERROR")
 			detail = tv.Err.Error()
 		case tv.OK:
-			status = bannerOnStyle.Render("OK")
+			status = bannerOnStyle().Render("OK")
 			detail = tv.Detail
 		default:
-			status = bannerFailStyle.Render("FAIL")
+			status = bannerFailStyle().Render("FAIL")
 			detail = tv.Detail
 		}
-		fmt.Printf("  %-40s [%s] %s\n", tv.Table, status, detail)
+		lipgloss.Printf("  %-40s [%s] %s\n", tv.Table, status, detail)
 	}
 }
 
@@ -380,29 +381,29 @@ const bannerMatrix = `                                              :.
 // printSyncBanner renders the pre-sync confirmation banner in the matrix-green palette.
 // lipgloss emits plain text automatically when stdout is not a TTY or NO_COLOR is set.
 func printSyncBanner(sc config.SyncConfig, src, dst *config.ConnectionConfig, args opts.CLIArgs, tableCount int) {
-	sep := bannerArtStyle.Render("=================================================================")
+	sep := bannerArtStyle().Render("=================================================================")
 
-	fmt.Printf("\n%s\n%s\n", sep, bannerArtStyle.Render(bannerLogo))
+	lipgloss.Printf("\n%s\n%s\n", sep, bannerArtStyle().Render(bannerLogo))
 	if args.DryRun {
-		fmt.Println(bannerOnStyle.Render("  *** DRY RUN — no changes will be committed ***"))
+		lipgloss.Println(bannerOnStyle().Render("  *** DRY RUN — no changes will be committed ***"))
 	}
-	fmt.Printf("%s %s\n",
-		bannerLabelStyle.Render("Config Description:"),
-		bannerTextStyle.Render(sc.Description))
-	fmt.Printf("%s %s                     %s %s\n",
-		bannerLabelStyle.Render("Source:"),
-		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", src.Host, src.Port, src.Database)),
-		bannerLabelStyle.Render("Destination:"),
-		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", dst.Host, dst.Port, dst.Database)))
-	fmt.Println(bannerArtStyle.Render(bannerMatrix))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Truncate?:"), styledBool(args.Truncate))
+	lipgloss.Printf("%s %s\n",
+		bannerLabelStyle().Render("Config Description:"),
+		bannerTextStyle().Render(sc.Description))
+	lipgloss.Printf("%s %s                     %s %s\n",
+		bannerLabelStyle().Render("Source:"),
+		bannerTextStyle().Render(fmt.Sprintf("%s:%d/%s", src.Host, src.Port, src.Database)),
+		bannerLabelStyle().Render("Destination:"),
+		bannerTextStyle().Render(fmt.Sprintf("%s:%d/%s", dst.Host, dst.Port, dst.Database)))
+	lipgloss.Println(bannerArtStyle().Render(bannerMatrix))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Truncate?:"), styledBool(args.Truncate))
 	if args.Truncate {
-		fmt.Printf("%s %s\n", bannerLabelStyle.Render("Cascade?:"), styledBool(args.Cascade))
+		lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Cascade?:"), styledBool(args.Cascade))
 	}
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Preserve?:"), styledBool(args.Preserve))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Disable Triggers?:"), styledBool(args.DisableTriggers))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Defer Constraints?"), styledBool(args.DeferConstraints))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("No Safety?"), styledBool(args.NoSafety))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Tables:"), bannerTextStyle.Render(strconv.Itoa(tableCount)))
-	fmt.Printf("%s\n", sep)
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Preserve?:"), styledBool(args.Preserve))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Disable Triggers?:"), styledBool(args.DisableTriggers))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Defer Constraints?"), styledBool(args.DeferConstraints))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("No Safety?"), styledBool(args.NoSafety))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Tables:"), bannerTextStyle().Render(strconv.Itoa(tableCount)))
+	lipgloss.Printf("%s\n", sep)
 }

@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 	"github.com/jwbonnell/pggosync/config"
 )
 
 type profileModel struct {
 	list    list.Model
 	handler *config.UserConfigHandler
+	styles  styles
+	isDark  bool
 	width   int
 	height  int
 }
@@ -28,19 +30,31 @@ func (i profileItem) FilterValue() string { return i.profile.Name }
 
 type launchProfileMsg struct{ profile config.SyncProfile }
 
-func newProfileModel(handler *config.UserConfigHandler) profileModel {
+func newProfileModel(s styles, isDark bool, handler *config.UserConfigHandler) profileModel {
 	profiles, _ := handler.LoadProfiles()
 	items := make([]list.Item, len(profiles.Profiles))
 	for i, p := range profiles.Profiles {
 		items[i] = profileItem{profile: p}
 	}
-	l := list.New(items, newMenuItemDelegate(), 60, 20)
+	l := list.New(items, newMenuItemDelegate(s, isDark), 60, 20)
 	l.Title = "Sync Profiles"
-	l.Styles.Title = titleStyle
+	l.Styles = list.DefaultStyles(isDark)
+	l.Styles.Title = s.title
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(true)
-	return profileModel{list: l, handler: handler}
+	return profileModel{list: l, handler: handler, styles: s, isDark: isDark}
+}
+
+// withStyles re-themes the screen after the terminal background is known. The list's styles and
+// delegate bake in colours at construction, so they are rebuilt rather than reassigned.
+func (m profileModel) withStyles(s styles, isDark bool) profileModel {
+	m.styles = s
+	m.isDark = isDark
+	m.list.SetDelegate(newMenuItemDelegate(s, isDark))
+	m.list.Styles = list.DefaultStyles(isDark)
+	m.list.Styles.Title = s.title
+	return m
 }
 
 func (m profileModel) Init() tea.Cmd { return nil }
@@ -48,22 +62,22 @@ func (m profileModel) Init() tea.Cmd { return nil }
 func (m profileModel) Update(msg tea.Msg) (profileModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
+		h, v := m.styles.doc.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
 		m.width = msg.Width
 		m.height = msg.Height
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "enter", " ":
+		case "enter", "space":
 			if item, ok := m.list.SelectedItem().(profileItem); ok {
 				return m, func() tea.Msg { return launchProfileMsg{profile: item.profile} }
 			}
 		case "d":
 			if item, ok := m.list.SelectedItem().(profileItem); ok {
 				_ = m.handler.DeleteProfile(item.profile.Name)
-				fresh := newProfileModel(m.handler)
-				h, v := docStyle.GetFrameSize()
+				fresh := newProfileModel(m.styles, m.isDark, m.handler)
+				h, v := m.styles.doc.GetFrameSize()
 				fresh.list.SetSize(m.width-h, m.height-v)
 				fresh.width = m.width
 				fresh.height = m.height
@@ -81,6 +95,6 @@ func (m profileModel) Update(msg tea.Msg) (profileModel, tea.Cmd) {
 
 func (m profileModel) View() string {
 	content := strings.TrimRight(m.list.View(), "\n")
-	content += "\n\n" + helpStyle.Render("enter: launch · d: delete")
-	return docStyle.Render(content)
+	content += "\n\n" + m.styles.help.Render("enter: launch · d: delete")
+	return m.styles.doc.Render(content)
 }

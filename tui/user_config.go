@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"github.com/jwbonnell/pggosync/config"
 )
 
@@ -44,6 +44,8 @@ type userConfigModel struct {
 	phase   userConfigPhase
 	list    list.Model
 	form    *huh.Form
+	styles  styles
+	isDark  bool
 	width   int
 	height  int
 	err     string
@@ -54,12 +56,30 @@ type userConfigModel struct {
 }
 
 // newUserConfigModel creates the connection management screen with the connection list pre-loaded.
-func newUserConfigModel(handler *config.UserConfigHandler) userConfigModel {
+func newUserConfigModel(s styles, isDark bool, handler *config.UserConfigHandler) userConfigModel {
 	m := userConfigModel{
 		handler: handler,
 		phase:   ucPhaseList,
+		styles:  s,
+		isDark:  isDark,
 	}
 	m.list = m.buildList()
+	return m
+}
+
+// withStyles re-themes the screen after the terminal background is known. The list bakes in its
+// colours at construction, so it is rebuilt.
+//
+// The form is deliberately left alone. It only exists once the user opens one, which is long
+// after the background reply lands at startup — by then buildConnectionForm picks up the new
+// styles on its own. Rebuilding it here would reset formValues and discard whatever had been
+// typed, which is a far worse failure than a stale palette.
+func (m userConfigModel) withStyles(s styles, isDark bool) userConfigModel {
+	m.styles = s
+	m.isDark = isDark
+	m.list.SetDelegate(newMenuItemDelegate(s, isDark))
+	m.list.Styles = list.DefaultStyles(isDark)
+	m.list.Styles.Title = s.title
 	return m
 }
 
@@ -77,9 +97,10 @@ func (m *userConfigModel) buildList() list.Model {
 		items = append(items, item)
 	}
 
-	l := list.New(items, newMenuItemDelegate(), 60, 20)
+	l := list.New(items, newMenuItemDelegate(m.styles, m.isDark), 60, 20)
 	l.Title = "Connections"
-	l.Styles.Title = titleStyle
+	l.Styles = list.DefaultStyles(m.isDark)
+	l.Styles.Title = m.styles.title
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(true)
@@ -106,7 +127,7 @@ func (m *userConfigModel) buildConnectionForm(name string, existing *config.Conn
 			return nil
 		}
 	}
-	return newConnectionForm(m.formValues, placeholder, nameValidate)
+	return sizeForm(newConnectionForm(m.styles, m.formValues, placeholder, nameValidate), m.width)
 }
 
 // Init satisfies tea.Model; the connection list needs no initial command.
@@ -120,15 +141,20 @@ func (m userConfigModel) Update(msg tea.Msg) (userConfigModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		h, v := docStyle.GetFrameSize()
+		h, v := m.styles.doc.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
+		// sizeForm pins the form's width, which stops huh from adopting resizes itself.
+		if m.form != nil {
+			m.form.WithWidth(msg.Width)
+		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.phase == ucPhaseList {
 			switch msg.String() {
 			case "esc", "q":
 				return m, func() tea.Msg { return switchScreenMsg{screen: menuScreen} }
-			case "enter", " ":
+			// Bubble Tea v2 reports the space bar as "space"; " " never matches.
+			case "enter", "space":
 				return m.handleListSelect()
 			case "n":
 				return m.openNewForm()
@@ -247,21 +273,21 @@ func (m userConfigModel) View() string {
 	case ucPhaseList:
 		sb.WriteString(m.list.View())
 		if m.err != "" {
-			sb.WriteString("\n" + errorStyle.Render(m.err))
+			sb.WriteString("\n" + m.styles.err.Render(m.err))
 		}
 		if m.status != "" {
-			sb.WriteString("\n" + successStyle.Render(m.status))
+			sb.WriteString("\n" + m.styles.success.Render(m.status))
 		}
-		sb.WriteString("\n" + mutedStyle.Render("enter: edit   n: new   d: delete   esc: back"))
+		sb.WriteString("\n" + m.styles.muted.Render("enter: edit   n: new   d: delete   esc: back"))
 
 	case ucPhaseForm:
-		sb.WriteString(wizardTitleStyle.Render("Connection Config"))
+		sb.WriteString(m.styles.wizardTitle.Render("Connection Config"))
 		if m.err != "" {
-			sb.WriteString("\n" + errorStyle.Render(m.err))
+			sb.WriteString("\n" + m.styles.err.Render(m.err))
 		}
 		sb.WriteString("\n" + m.form.View())
 
 	}
 
-	return docStyle.Render(sb.String())
+	return m.styles.doc.Render(sb.String())
 }

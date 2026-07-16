@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/tui"
@@ -105,17 +106,17 @@ func connCmd(handler *config.UserConfigHandler) *cli.Command {
 							width = len(c)
 						}
 					}
-					// lipgloss renders plain, un-escaped text automatically when stdout is not a
-					// TTY or NO_COLOR is set, so this single styled path is safe for scripting too.
-					fmt.Println(bannerLabelStyle.Render("Connections"))
+					// Printing via lipgloss (not fmt) is what drops the colour when stdout is not
+					// a TTY or NO_COLOR is set, so this styled path stays safe for scripting.
+					lipgloss.Println(bannerLabelStyle().Render("Connections"))
 					for _, c := range conns {
-						name := bannerArtStyle.Render(fmt.Sprintf("%-*s", width, c))
+						name := bannerArtStyle().Render(fmt.Sprintf("%-*s", width, c))
 						conn, err := handler.GetConnection(c)
 						if err != nil {
-							fmt.Printf("  %s\n", name)
+							lipgloss.Printf("  %s\n", name)
 							continue
 						}
-						fmt.Printf("  %s  %s\n", name, bannerTextStyle.Render(maskedConnString(conn)))
+						lipgloss.Printf("  %s  %s\n", name, bannerTextStyle().Render(maskedConnString(conn)))
 					}
 					return nil
 				},

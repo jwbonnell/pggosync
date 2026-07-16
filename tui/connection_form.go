@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/jwbonnell/pggosync/config"
 )
 
@@ -62,7 +64,7 @@ func (v *connectionFormValues) connection() (string, config.ConnectionConfig) {
 // name field when editing an existing connection. nameValidate, when non-nil, is an
 // extra check run against the (trimmed) name — used to reject names that would
 // overwrite an existing connection.
-func newConnectionForm(v *connectionFormValues, placeholderName string, nameValidate func(string) error) *huh.Form {
+func newConnectionForm(s styles, v *connectionFormValues, placeholderName string, nameValidate func(string) error) *huh.Form {
 	nameField := huh.NewInput().
 		Title("Connection name").
 		Description("Identifier for this connection").
@@ -80,7 +82,7 @@ func newConnectionForm(v *connectionFormValues, placeholderName string, nameVali
 	if placeholderName != "" {
 		nameField = nameField.Placeholder(placeholderName)
 	}
-	return newForm(
+	return s.newForm(
 		huh.NewGroup(
 			nameField,
 			huh.NewInput().Title("Host").Value(&v.Host),
@@ -110,7 +112,12 @@ func newConnectionForm(v *connectionFormValues, placeholderName string, nameVali
 // RunConnectionForm runs the connection form standalone (outside the full TUI),
 // saves the resulting connection, and returns its name. Aborting the form
 // returns huh.ErrUserAborted.
+//
+// Running outside Bubble Tea means there is no tea.BackgroundColorMsg to learn the terminal
+// background from (as tui.Run does), so the background is queried directly here. The query
+// short-circuits when stdin/stdout are not a terminal, defaulting to dark.
 func RunConnectionForm(handler *config.UserConfigHandler) (string, error) {
+	s := newStyles(lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
 	v := newConnectionFormValues("", nil)
 	rejectExisting := func(name string) error {
 		exists, err := handler.ConnectionExists(name)
@@ -122,7 +129,7 @@ func RunConnectionForm(handler *config.UserConfigHandler) (string, error) {
 		}
 		return nil
 	}
-	if err := newConnectionForm(v, "", rejectExisting).Run(); err != nil {
+	if err := newConnectionForm(s, v, "", rejectExisting).Run(); err != nil {
 		return "", err
 	}
 	name, conn := v.connection()

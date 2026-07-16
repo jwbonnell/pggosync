@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/jwbonnell/pggosync/config"
 	"github.com/jwbonnell/pggosync/datasource"
 	"github.com/jwbonnell/pggosync/sync"
@@ -162,25 +163,25 @@ func distinctSchemaCount(source *datasource.ReaderDataSource) int {
 
 // printSchemaSyncBanner renders the pre-sync confirmation banner in the matrix-green palette.
 func printSchemaSyncBanner(source *datasource.ReaderDataSource, src, dst *config.ConnectionConfig, clean, dryRun, noSafety bool) {
-	sep := bannerArtStyle.Render("=================================================================")
+	sep := bannerArtStyle().Render("=================================================================")
 
-	fmt.Printf("\n%s\n%s\n", sep, bannerArtStyle.Render(bannerLogo))
-	fmt.Println(bannerLabelStyle.Render("  Schema sync — copies the whole database schema (DDL)"))
+	lipgloss.Printf("\n%s\n%s\n", sep, bannerArtStyle().Render(bannerLogo))
+	lipgloss.Println(bannerLabelStyle().Render("  Schema sync — copies the whole database schema (DDL)"))
 	if dryRun {
-		fmt.Println(bannerOnStyle.Render("  *** DRY RUN — no changes will be applied ***"))
+		lipgloss.Println(bannerOnStyle().Render("  *** DRY RUN — no changes will be applied ***"))
 	}
-	fmt.Printf("%s %s                     %s %s\n",
-		bannerLabelStyle.Render("Source:"),
-		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", src.Host, src.Port, src.Database)),
-		bannerLabelStyle.Render("Destination:"),
-		bannerTextStyle.Render(fmt.Sprintf("%s:%d/%s", dst.Host, dst.Port, dst.Database)))
-	fmt.Println(bannerArtStyle.Render(bannerMatrix))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Source tables:"),
-		bannerTextStyle.Render(fmt.Sprintf("%s across %d schema(s)", strconv.Itoa(len(source.Tables)), distinctSchemaCount(source))))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("Clean (drop & recreate)?:"), styledBool(clean))
-	fmt.Printf("%s %s\n", bannerLabelStyle.Render("No Safety?"), styledBool(noSafety))
+	lipgloss.Printf("%s %s                     %s %s\n",
+		bannerLabelStyle().Render("Source:"),
+		bannerTextStyle().Render(fmt.Sprintf("%s:%d/%s", src.Host, src.Port, src.Database)),
+		bannerLabelStyle().Render("Destination:"),
+		bannerTextStyle().Render(fmt.Sprintf("%s:%d/%s", dst.Host, dst.Port, dst.Database)))
+	lipgloss.Println(bannerArtStyle().Render(bannerMatrix))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Source tables:"),
+		bannerTextStyle().Render(fmt.Sprintf("%s across %d schema(s)", strconv.Itoa(len(source.Tables)), distinctSchemaCount(source))))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("Clean (drop & recreate)?:"), styledBool(clean))
+	lipgloss.Printf("%s %s\n", bannerLabelStyle().Render("No Safety?"), styledBool(noSafety))
 	if clean {
-		fmt.Println(bannerFailStyle.Render("  WARNING: --clean DROPs and recreates destination objects — their data will be wiped."))
+		lipgloss.Println(bannerFailStyle().Render("  WARNING: --clean DROPs and recreates destination objects — their data will be wiped."))
 	}
-	fmt.Printf("%s\n", sep)
+	lipgloss.Printf("%s\n", sep)
 }

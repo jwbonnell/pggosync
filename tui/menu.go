@@ -2,13 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/jwbonnell/pggosync/config"
 )
 
@@ -26,35 +25,20 @@ type menuItemDelegate struct {
 	list.DefaultDelegate
 }
 
-// newMenuItemDelegate creates a list delegate with the project's pink highlight colour.
-func newMenuItemDelegate() menuItemDelegate {
+// newMenuItemDelegate creates a list delegate highlighted in the project's primary colour.
+// The delegate's own defaults no longer adapt to the background on their own (lipgloss v2
+// dropped AdaptiveColor), so they are re-seeded from isDark before being recoloured.
+func newMenuItemDelegate(s styles, isDark bool) menuItemDelegate {
 	d := list.NewDefaultDelegate()
-	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(colorPrimary).BorderForeground(colorPrimary)
-	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(colorMuted).BorderForeground(colorPrimary)
+	d.Styles = list.NewDefaultItemStyles(isDark)
+	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(s.c.primary).BorderForeground(s.c.primary)
+	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(s.c.muted).BorderForeground(s.c.primary)
 	return menuItemDelegate{d}
-}
-
-type menuDelegate struct{}
-
-func (d menuDelegate) Height() int                             { return 2 }
-func (d menuDelegate) Spacing() int                            { return 1 }
-func (d menuDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (d menuDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(menuItem)
-	if !ok {
-		return
-	}
-	selected := index == m.Index()
-	titleS := lipgloss.NewStyle().PaddingLeft(2)
-	descS := lipgloss.NewStyle().PaddingLeft(4).Foreground(colorMuted)
-	if selected {
-		titleS = titleS.Foreground(colorPrimary).Bold(true)
-	}
-	_, _ = io.WriteString(w, titleS.Render(i.title)+"\n"+descS.Render(i.description))
 }
 
 type menuModel struct {
 	list      list.Model
+	styles    styles
 	lastEntry *config.SyncHistoryEntry
 	width     int
 	height    int
@@ -73,19 +57,23 @@ const (
 	menuListW = menuBoxWidth - borderSize - menuPadH
 )
 
-var (
-	menuPanelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorPrimary).
-			Padding(0, 1)
+// menuPanel is the bordered box the menu list sits in.
+func (s styles) menuPanel() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.c.primary).
+		Padding(0, 1)
+}
 
-	logoPanelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorPrimary).
-			Padding(1, 2).
-			MarginLeft(menuLogoGap).
-			Align(lipgloss.Center, lipgloss.Center)
-)
+// logoPanel is the bordered box beside the menu, holding the logo art.
+func (s styles) logoPanel() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.c.primary).
+		Padding(1, 2).
+		MarginLeft(menuLogoGap).
+		Align(lipgloss.Center, lipgloss.Center)
+}
 
 // logoBoxOuter is the total width the logo box should render at to fill the space to the
 // right of the fixed-width menu box (excluding the left-margin gap). innerWidth is the width
@@ -100,17 +88,17 @@ func menuShowsLogo(innerWidth int) bool {
 }
 
 // menuLogoContent returns the green block-letter banner plus a tagline (unbordered).
-func menuLogoContent() string {
+func menuLogoContent(s styles) string {
 	return lipgloss.JoinVertical(
 		lipgloss.Center,
-		lipgloss.NewStyle().Foreground(colorPrimary).Bold(true).Render(menuLogoArt),
+		lipgloss.NewStyle().Foreground(s.c.primary).Bold(true).Render(menuLogoArt),
 		"",
-		mutedStyle.Render("postgres → postgres data sync"),
+		s.muted.Render("postgres → postgres data sync"),
 	)
 }
 
 // newMenuModel creates the main menu with its three navigation items and an optional last-sync summary.
-func newMenuModel(lastEntry *config.SyncHistoryEntry) menuModel {
+func newMenuModel(s styles, isDark bool, lastEntry *config.SyncHistoryEntry) menuModel {
 	items := []list.Item{
 		menuItem{
 			title:       "Run Sync",
@@ -134,14 +122,25 @@ func newMenuModel(lastEntry *config.SyncHistoryEntry) menuModel {
 		},
 	}
 
-	l := list.New(items, newMenuItemDelegate(), 60, 20)
+	l := list.New(items, newMenuItemDelegate(s, isDark), 60, 20)
 	l.Title = "pggosync"
-	l.Styles.Title = titleStyle
+	l.Styles = list.DefaultStyles(isDark)
+	l.Styles.Title = s.title
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(true)
 
-	return menuModel{list: l, lastEntry: lastEntry}
+	return menuModel{list: l, styles: s, lastEntry: lastEntry}
+}
+
+// withStyles re-themes the menu after the terminal background is known. The list's own styles
+// and its delegate bake in colours at construction, so they are rebuilt rather than reassigned.
+func (m menuModel) withStyles(s styles, isDark bool) menuModel {
+	m.styles = s
+	m.list.SetDelegate(newMenuItemDelegate(s, isDark))
+	m.list.Styles = list.DefaultStyles(isDark)
+	m.list.Styles.Title = s.title
+	return m
 }
 
 // Init satisfies tea.Model; the menu list needs no initial command.
@@ -153,7 +152,7 @@ func (m menuModel) Init() tea.Cmd {
 func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
+		h, v := m.styles.doc.GetFrameSize()
 		m.width = msg.Width
 		m.height = msg.Height
 		innerWidth := msg.Width - h
@@ -164,9 +163,10 @@ func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 			m.list.SetSize(innerWidth, msg.Height-v)
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "enter", " ":
+		// Bubble Tea v2 reports the space bar as "space"; " " never matches.
+		case "enter", "space":
 			if item, ok := m.list.SelectedItem().(menuItem); ok {
 				return m, func() tea.Msg {
 					return switchScreenMsg{screen: item.target}
@@ -187,25 +187,25 @@ func (m menuModel) Update(msg tea.Msg) (menuModel, tea.Cmd) {
 func (m menuModel) View() string {
 	content := strings.TrimRight(m.list.View(), "\n")
 	if m.lastEntry != nil {
-		content += "\n\n" + lastSyncStyle.Render(formatLastSync(m.lastEntry))
+		content += "\n\n" + m.styles.lastSync.Render(formatLastSync(m.lastEntry))
 	}
 
-	h, _ := docStyle.GetFrameSize()
+	h, _ := m.styles.doc.GetFrameSize()
 	innerWidth := m.width - h
 	if !menuShowsLogo(innerWidth) {
-		return docStyle.Render(content)
+		return m.styles.doc.Render(content)
 	}
 
 	// Two bordered sections side by side. The menu box is a fixed width; the logo box
 	// stretches to fill the rest of the row and to the menu box's height, with the logo
 	// centered inside it. (lipgloss Width/Height set the box interior; the border adds 2.)
-	menuPanel := menuPanelStyle.Width(menuBoxWidth - borderSize).Render(content)
-	logoPanel := logoPanelStyle.
+	menuPanel := m.styles.menuPanel().Width(menuBoxWidth - borderSize).Render(content)
+	logoPanel := m.styles.logoPanel().
 		Width(logoBoxOuter(innerWidth) - borderSize).
 		Height(lipgloss.Height(menuPanel) - borderSize).
-		Render(menuLogoContent())
+		Render(menuLogoContent(m.styles))
 	row := lipgloss.JoinHorizontal(lipgloss.Top, menuPanel, logoPanel)
-	return docStyle.Render(row)
+	return m.styles.doc.Render(row)
 }
 
 func formatLastSync(e *config.SyncHistoryEntry) string {
